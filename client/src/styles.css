@@ -74,3 +74,37 @@ img, svg, video, canvas { max-width: 100%; height: auto; }
 .srcTag{padding:1px 8px;border-radius:6px}
 .srcTag.live{background:rgba(60,200,120,.18);color:#7ee2a8}
 .srcTag.warn{background:rgba(255,180,60,.18);color:#ffd591}
+
+/* ===== Ticker bar (main coin prices) ===== */
+.ticker{display:flex;gap:0;overflow-x:auto;background:#0a1018;border-bottom:1px solid var(--line);-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.ticker::-webkit-scrollbar{height:5px}.ticker::-webkit-scrollbar-thumb{background:#1c2940;border-radius:3px}
+.tick{display:flex;align-items:center;gap:6px;padding:9px 14px;border-right:1px solid var(--line);white-space:nowrap;font-size:13px;flex:0 0 auto}
+.tick b{color:#d8e1f1;font-weight:700}.tick span{color:var(--txt)}.tick em{font-style:normal;font-weight:600}
+
+/* ===== Search box ===== */
+.search{background:#0b1320;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:9px 12px;font-size:13px;min-width:230px;outline:none}
+.search:focus{border-color:#5b8cff;box-shadow:0 0 0 2px rgba(91,140,255,.15)}
+.search::placeholder{color:var(--muted)}
+.noResults{text-align:center;color:var(--muted);padding:26px;font-size:14px}
+
+/* ===== Trade % + risk/reward ===== */
+.mv{display:block;font-size:11px;font-weight:600;margin-top:2px}
+.mv.long,.green{color:#7ee2a8}.mv.short,.red{color:#ff9b9b}
+.rr{font-weight:700}
+.targets div em{display:block;font-size:11px;font-weight:600;margin-top:2px}
+.tradeSummary{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:#0b1320;border:1px solid var(--line);border-radius:10px;font-size:13px;flex-wrap:wrap}
+.tradeSummary span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+
+/* ===== Mobile polish ===== */
+.tableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media (max-width:640px){
+  .search{width:100%;min-width:0}
+  .tick{padding:8px 12px;font-size:12px}
+  .sectionTitle .filters{width:100%;display:flex}
+  .sectionTitle .filters button{flex:1}
+  .tradeSummary{flex-direction:column;align-items:flex-start;gap:4px}
+}
+@media (max-width:380px){
+  .tick{padding:7px 10px}
+  .stat strong{font-size:20px}
+}

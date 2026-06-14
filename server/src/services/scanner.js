@@ -36,13 +36,22 @@ function scoreWithHistory(coin, mode, input, profile) {
 
 function decorate(scored, mode) {
   const targets = makeTargets(scored, mode);
+  const dir = scored.direction, price = scored.price;
+  // % move from current price to each level (profit + for targets, loss − for stop).
+  const mv = (to) => (dir === 'LONG' ? ((to - price) / price) * 100 : ((price - to) / price) * 100);
+  const fp = (x) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`;
+  const t1 = mv(targets.target1), t2 = mv(targets.target2), st = mv(targets.stretchTarget), risk = mv(targets.invalidation);
+  const rr = risk < 0 ? Math.abs(t1 / risk) : null;
   return {
     ...scored, targets,
+    trade: { toTarget1: +t1.toFixed(2), toTarget2: +t2.toFixed(2), toStretch: +st.toFixed(2), toInvalidation: +risk.toFixed(2), rr: rr != null ? +rr.toFixed(2) : null },
     display: {
       price: formatPrice(scored.price),
       buyZone: `${formatPrice(targets.buyZone[0])} - ${formatPrice(targets.buyZone[1])}`,
       target1: formatPrice(targets.target1), target2: formatPrice(targets.target2),
       stretch: formatPrice(targets.stretchTarget), invalidation: formatPrice(targets.invalidation),
+      target1Move: fp(t1), target2Move: fp(t2), stretchMove: fp(st), riskMove: fp(risk),
+      rr: rr != null ? `${rr.toFixed(1)}R` : '—',
     },
   };
 }

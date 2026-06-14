@@ -69,6 +69,12 @@ export function trendSignal(bars, series, ctx) {
   const E9 = last(ema(bars.close, 9));
   const E21 = last(ema(bars.close, Math.min(21, bars.n - 1)));
   const E50 = last(ema(bars.close, Math.min(50, bars.n - 1)));
+  // EMA 200 long-term regime — only meaningful with a real 200-bar lookback,
+  // so it engages mainly for deep-history coins (honest by design).
+  const E200 = bars.n >= 200 ? last(ema(bars.close, 200)) : null;
+  const hasE200 = E200 != null && E200 > 0;
+  const regime = hasE200 ? (price > E200 ? 1 : -1) : 0;          // above/below 200-EMA
+  const golden = hasE200 && E50 ? (E50 > E200 ? 1 : -1) : 0;     // 50/200 cross
   let align = 0;
   if (E9 && E21 && E50) {
     if (E9 > E21 && E21 > E50 && price > E9) align = 1;
@@ -88,16 +94,21 @@ export function trendSignal(bars, series, ctx) {
   const RSI = last(rsi(bars.close, 14)) ?? 50;
   const overbought = RSI > 70, oversold = RSI < 30, stretched = Math.abs(stretch) > 0.06;
   const reversal = clamp((overbought || oversold ? 40 : 0) + (stretched ? 40 : 0) + 20 * Math.min(Math.abs(stretch) / 0.1, 1));
-  const trendScore = clamp(50 + 25 * align + 25 * structure);
+  const trendScore = clamp(50 + 25 * align + 25 * structure + (hasE200 ? 8 * regime + 4 * golden : 0));
   const dirStrength = (trendScore - 50) / 50;
   const rf = reversal / 100;
   let long = 0, short = 0;
   if (dirStrength > 0) { long += dirStrength * (1 - 0.6 * rf); if (overbought) short += 0.3 * rf; }
   else if (dirStrength < 0) { short += -dirStrength * (1 - 0.6 * rf); if (oversold) long += 0.3 * rf; }
-  const why = `${align > 0 ? 'Bullish' : align < 0 ? 'Bearish' : 'Mixed'} EMA alignment, ${structure > 0 ? 'higher highs/lows' : structure < 0 ? 'lower highs/lows' : 'no clear structure'}; price ${r1(stretch * 100)}% vs EMA21, RSI ${Math.round(RSI)}${overbought ? ' (overbought)' : oversold ? ' (oversold)' : ''}`;
+  if (hasE200) { // long-term regime tilt
+    if (regime > 0) { long *= 1.10; short *= 0.90; }
+    else if (regime < 0) { short *= 1.10; long *= 0.90; }
+  }
+  const e200Note = hasE200 ? ` | EMA200 ${regime > 0 ? 'bull regime' : 'bear regime'}${golden > 0 ? ', golden cross' : golden < 0 ? ', death cross' : ''}` : '';
+  const why = `${align > 0 ? 'Bullish' : align < 0 ? 'Bearish' : 'Mixed'} EMA alignment, ${structure > 0 ? 'higher highs/lows' : structure < 0 ? 'lower highs/lows' : 'no clear structure'}; price ${r1(stretch * 100)}% vs EMA21, RSI ${Math.round(RSI)}${overbought ? ' (overbought)' : oversold ? ' (oversold)' : ''}${e200Note}`;
   const conf = tierConf(ctx, bars.n, 50) * (bars.n >= 50 ? 1 : 0.85);
   return mk('trend', trendScore, long, short, conf, bars.n >= 50 ? 'ok' : 'partial', why,
-    { emaAlign: align, structure, stretchPct: r2(stretch * 100), rsi: Math.round(RSI), reversalScore: Math.round(reversal) });
+    { emaAlign: align, structure, stretchPct: r2(stretch * 100), rsi: Math.round(RSI), reversalScore: Math.round(reversal), ema200Available: hasE200, ema200Regime: regime, ema200Cross: golden });
 }
 
 // 4. Momentum Confirmation
