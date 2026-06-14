@@ -1,0 +1,40 @@
+{
+  "name": "alpha-radar",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "node --watch server/src/index.js",
+    "client:dev": "vite --host 0.0.0.0 --config client/vite.config.js",
+    "build": "npm install --include=dev --prefix client && npm run build --prefix client",
+    "start": "node server/src/index.js",
+    "scan:once": "node server/scripts/scanOnce.js",
+    "db:reset": "node server/scripts/dbReset.js",
+    "db:migrate": "node server/scripts/migrate.js",
+    "test": "node --test server/src/engines/*.test.js",
+    "backfill:outcomes": "node server/scripts/backfillOutcomes.js",
+    "backfill:history": "node server/scripts/backfillHistory.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.21.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "pg-mem": "^3.0.14",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.0.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

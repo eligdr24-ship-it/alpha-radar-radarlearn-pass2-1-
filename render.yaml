@@ -1,0 +1,33 @@
+# Render deployment — Alpha Radar v1.2 (with persistent Postgres history)
+databases:
+  - name: alpha-radar-db
+    plan: free          # Render free Postgres (note: free instances expire ~30 days)
+
+services:
+  - type: web
+    name: alpha-radar
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: LIVE_MARKET_DATA
+        value: "true"
+      - key: SCAN_INTERVAL_MINUTES
+        value: "2"
+      - key: PGSSL
+        value: "true"
+      # Wire the managed Postgres connection string in automatically.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: alpha-radar-db
+          property: connectionString
+      # Render injects PORT automatically. Add optional API keys (TELEGRAM_*,
+      # COINGLASS_API_KEY, etc.) as secret env vars in the dashboard.
