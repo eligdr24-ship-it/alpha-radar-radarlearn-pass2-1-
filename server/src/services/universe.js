@@ -42,8 +42,11 @@ function normalize({ symbol, name, price, change24h, marketCapUsd, volume24hUsd,
 }
 
 async function fromCoinGecko() {
-  const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${UNIVERSE_SIZE}&page=1&sparkline=false&price_change_percentage=24h`;
-  const data = await fetchJson(url, { limiter: cgLimiter, retries: 2, timeoutMs: 12000 });
+  // Public CoinGecko throttles datacenter IPs; a free "demo" key lifts that.
+  const base = process.env.COINGECKO_BASE_URL || (process.env.COINGECKO_API_KEY ? 'https://api.coingecko.com' : 'https://api.coingecko.com');
+  const url = `${base}/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${UNIVERSE_SIZE}&page=1&sparkline=false&price_change_percentage=24h`;
+  const headers = process.env.COINGECKO_API_KEY ? { 'x-cg-demo-api-key': process.env.COINGECKO_API_KEY } : {};
+  const data = await fetchJson(url, { limiter: cgLimiter, retries: 2, timeoutMs: 12000, headers });
   if (!Array.isArray(data)) throw new Error('coingecko: bad payload');
   return data.map((c) => normalize({
     symbol: c.symbol, name: c.name, price: c.current_price,
@@ -53,7 +56,10 @@ async function fromCoinGecko() {
 }
 
 async function fromBinance() {
-  const data = await fetchJson('https://api.binance.com/api/v3/ticker/24hr', { limiter: bnLimiter, retries: 1, timeoutMs: 12000 });
+  // api.binance.com returns HTTP 451 from US/datacenter IPs (e.g. Render). The
+  // public market-data host data-api.binance.vision is not geo-blocked.
+  const base = process.env.BINANCE_BASE_URL || 'https://data-api.binance.vision';
+  const data = await fetchJson(`${base}/api/v3/ticker/24hr`, { limiter: bnLimiter, retries: 1, timeoutMs: 12000 });
   if (!Array.isArray(data)) throw new Error('binance: bad payload');
   return data
     .filter((t) => t.symbol.endsWith('USDT') && Number(t.quoteVolume) > 0)

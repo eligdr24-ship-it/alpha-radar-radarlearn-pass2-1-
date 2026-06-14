@@ -24,6 +24,13 @@ services:
         value: "2"
       - key: PGSSL
         value: "true"
+      # Non-geo-blocked Binance market-data host (works from Render's IPs).
+      - key: BINANCE_BASE_URL
+        value: https://data-api.binance.vision
+      # CoinGecko demo key — set the VALUE in the Render dashboard (kept out of
+      # the repo). sync:false means "declare it, but I'll enter it manually".
+      - key: COINGECKO_API_KEY
+        sync: false
       # Wire the managed Postgres connection string in automatically.
       - key: DATABASE_URL
         fromDatabase:

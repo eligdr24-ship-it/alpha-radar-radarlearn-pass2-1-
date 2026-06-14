@@ -139,6 +139,8 @@ function mkSetup(op, mode, decision, context, runId, at) {
 // ORCHESTRATOR — Postgres only.
 export async function evaluatePromotions({ byMode, macro, narratives, source, runId, at }) {
   if (store.activeDriver() !== 'postgres') return { skipped: true, reason: 'not-postgres' };
+  // Never learn on mock prices — only promote setups from live market data.
+  if (!source || /mock/.test(source)) return { skipped: true, reason: 'mock-data' };
   const cfg = RL_CFG();
   let created = 0, updated = 0, superseded = 0, filled = 0;
 

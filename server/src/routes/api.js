@@ -35,19 +35,45 @@ router.get('/dashboard', async (req, res) => {
   let dash = await getDashboard(mode);
   if (!dash.ready) { await runScan('on-demand'); dash = await getDashboard(mode); }
   const integrations = await integrationsStatus();
-  const top = dash.opportunities[0];
+
+  // Data-source transparency: per-coin label + overall status (never silent).
+  const ageSeconds = dash.updatedAt ? Math.round((Date.now() - new Date(dash.updatedAt).getTime()) / 1000) : null;
+  const staleAfter = Math.max(600, 3 * 60 * Number(process.env.SCAN_INTERVAL_MINUTES || 2));
+  const stale = ageSeconds != null && ageSeconds > staleAfter;
+  const opportunities = dash.opportunities.map((o) => ({ ...o, dataSource: sourceLabel(o.source, stale) }));
+  const top = opportunities[0];
+  const isLive = /coingecko|binance/.test(dash.dataSource || '') && !stale;
+  const dataStatus = {
+    live: isLive, stale, source: dash.dataSource || 'none',
+    label: sourceLabel(dash.dataSource, stale),
+    ageSeconds, lastScanStatus: dash.lastRun?.status || 'none',
+    errors: dash.lastRun?.errors || [],
+    note: isLive ? null : stale
+      ? 'Showing the last cached scan — the scanner may be asleep (free tier) or live APIs failed. Prices may be out of date.'
+      : 'Live market APIs are unavailable; prices below are MOCK placeholders, not real market data.',
+  };
+
   res.json({
-    version: '1.2.0', dataSource: dash.dataSource, integrations,
+    version: '1.2.0', dataSource: dash.dataSource, dataStatus, integrations,
     emerging: dash.emerging, universe: dash.universe,
     updatedAt: dash.updatedAt || new Date().toISOString(),
-    macro: dash.macro, narratives, opportunities: dash.opportunities, lastRun: dash.lastRun,
+    macro: dash.macro, narratives: dash.narratives || narratives, opportunities, lastRun: dash.lastRun,
     alerts: [
-      { type: 'Scan', title: `Universe: ${dash.universe?.size ?? 0} coins`, text: `Source ${dash.dataSource}. Rescored across scalp/day/swing.`, age: 'now' },
+      { type: 'Scan', title: `Data: ${dataStatus.label}`, text: dataStatus.note || `${dash.universe?.size ?? 0} coins, rescored across scalp/day/swing.`, age: ageSeconds != null ? `${ageSeconds}s ago` : 'now' },
       top ? { type: 'Opportunity', title: `Top ${top.direction}: ${top.symbol}`, text: `Conviction ${top.conviction}/100 | Zone ${top.display.buyZone} | Target ${top.display.target1}`, age: 'now' } : null,
       { type: 'Telegram', title: 'Telegram Alerts', text: integrations.telegram === 'configured' ? 'Configured and ready.' : 'Add TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID to activate.', age: 'config' },
     ].filter(Boolean),
   });
 });
+
+// Human-readable data-source label per coin / overall.
+function sourceLabel(source, stale) {
+  if (stale) return 'STALE: Cached';
+  if (/coingecko/.test(source || '')) return 'LIVE: CoinGecko';
+  if (/binance/.test(source || '')) return 'LIVE: Binance';
+  if (/mock/.test(source || '')) return 'FALLBACK: Mock';
+  return 'UNKNOWN';
+}
 
 router.get('/coin/:symbol', async (req, res) => {
   const mode = req.query.mode || 'day';

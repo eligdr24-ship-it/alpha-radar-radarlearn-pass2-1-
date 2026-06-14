@@ -148,15 +148,54 @@ export async function runScan(trigger = 'manual') {
   }
 }
 
+function computeStats(ops) {
+  if (!ops.length) return { totalOpportunities: 0, avgConfidence: 0 };
+  const conf = ops.reduce((s, o) => s + (o.confidence || 0), 0) / ops.length;
+  return { totalOpportunities: ops.length, avgConfidence: Math.round(conf) };
+}
+
+// Live narrative strength/momentum derived from the scored universe by sector.
+function deriveNarratives(ops) {
+  if (!ops.length) return null;
+  const bySector = new Map();
+  for (const o of ops) {
+    const s = o.sector || 'Other';
+    const e = bySector.get(s) || { narrative: s, conv: 0, mom: 0, n: 0 };
+    e.conv += o.conviction || 0; e.mom += o.change24h || 0; e.n += 1;
+    bySector.set(s, e);
+  }
+  return [...bySector.values()]
+    .map((e) => ({ narrative: e.narrative, strength: Math.round(e.conv / e.n), momentum: Math.round(e.mom / e.n) }))
+    .sort((a, b) => b.strength - a.strength).slice(0, 6);
+}
+
 export async function getDashboard(mode = 'day') {
   const [opp, snap, universe, lastRun] = await Promise.all([
     store.getOpportunities(), store.getLatestSnapshot(), store.getUniverse(), store.getLastScanRun(),
   ]);
   const opportunities = opp?.byMode?.[mode] || opp?.byMode?.day || [];
+  const stats = computeStats(opportunities);
+  const narratives = deriveNarratives(opportunities);
+
+  // Real 24h win-rate from Radar Learn outcomes (Postgres). Null until outcomes
+  // accrue — the UI shows "—" rather than a fabricated number.
+  let winRate24h = null;
+  if (store.activeDriver() === 'postgres') {
+    try {
+      const rows = await store.learnSuccessRate({ mode });
+      const h = rows.find((r) => r.horizon === '24h');
+      if (h && Number(h.n) > 0) winRate24h = Math.round(Number(h.win_rate) * 100);
+    } catch { /* leave null */ }
+  }
+
+  const macro = snap?.macro
+    ? { ...snap.macro, totalOpportunities: stats.totalOpportunities, avgConfidence: stats.avgConfidence, winRate24h, statsLive: true }
+    : null;
+
   return {
     ready: Boolean(opp), mode, opportunities,
     dataSource: snap?.source || 'none', updatedAt: opp?.at || null,
-    macro: snap?.macro || null, emerging: snap?.emerging || [],
+    macro, narratives, emerging: snap?.emerging || [],
     universe: universe ? { size: universe.coins.length, source: universe.source, filter: universe.filter } : null,
     lastRun,
   };

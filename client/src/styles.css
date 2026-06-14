@@ -60,3 +60,17 @@ img, svg, video, canvas { max-width: 100%; height: auto; }
 .whyList li{margin:6px 0;line-height:1.4}
 .warmBadge{margin-left:8px;font-size:11px;font-weight:700;color:var(--yellow);border:1px solid rgba(255,210,63,.4);background:rgba(255,210,63,.1);border-radius:999px;padding:2px 8px;vertical-align:middle}
 .tierNote{display:block;margin-top:10px;color:var(--muted);font-size:11px}
+
+/* Data-source transparency */
+.dataBanner{display:flex;flex-direction:column;gap:2px;padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;border:1px solid}
+.dataBanner.mock{background:rgba(255,80,80,.12);border-color:rgba(255,80,80,.5);color:#ffb3b3}
+.dataBanner.stale{background:rgba(255,180,60,.12);border-color:rgba(255,180,60,.5);color:#ffd591}
+.dataBanner b{font-size:13px}
+.dataBanner span{opacity:.85;font-size:12px}
+.srcBadge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:600;letter-spacing:.2px}
+.srcBadge.live{background:rgba(60,200,120,.18);color:#7ee2a8}
+.srcBadge.stale{background:rgba(255,180,60,.18);color:#ffd591}
+.srcBadge.mock{background:rgba(255,80,80,.18);color:#ffb3b3}
+.srcTag{padding:1px 8px;border-radius:6px}
+.srcTag.live{background:rgba(60,200,120,.18);color:#7ee2a8}
+.srcTag.warn{background:rgba(255,180,60,.18);color:#ffd591}

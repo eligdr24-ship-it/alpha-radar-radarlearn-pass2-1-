@@ -98,17 +98,62 @@ export async function getRedditLite() {
   }
 }
 
+// Live macro quotes from Stooq (free, no key, CSV). Per-asset fallback to mock
+// so a single bad ticker never blanks the board. Daily open→close % change.
+const MACRO_TICKERS = [
+  { label: 'Gold', t: 'xauusd' },
+  { label: 'VIX', t: '^vix' },
+  { label: 'DXY', t: '^dxy' },
+  { label: 'NASDAQ', t: '^ndq' },
+];
+
+export function parseStooqQuotes(csv) {
+  if (typeof csv !== 'string') return [];
+  const lines = csv.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const p = lines[i].split(',');
+    const sym = (p[0] || '').toUpperCase(), open = Number(p[3]), close = Number(p[6]);
+    if (!sym || p[6] === 'N/D' || !Number.isFinite(close)) continue;
+    const change = Number.isFinite(open) && open ? Number((((close - open) / open) * 100).toFixed(2)) : 0;
+    out.push({ symbol: sym, value: close, change });
+  }
+  return out;
+}
+
+async function getLiveMacro() {
+  const base = process.env.MACRO_QUOTE_URL || 'https://stooq.com/q/l/';
+  const syms = MACRO_TICKERS.map((m) => m.t).join('+');
+  const url = `${base}?s=${encodeURIComponent(syms)}&f=sd2t2ohlcv&h&e=csv`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`stooq ${res.status}`);
+  const rows = parseStooqQuotes(await res.text());
+  const bySym = new Map(rows.map((r) => [r.symbol, r]));
+  const round = (n) => (n >= 1000 ? Math.round(n) : Math.round(n * 100) / 100);
+  const assets = MACRO_TICKERS.map((m) => {
+    const r = bySym.get(m.t.toUpperCase());
+    const fb = fallbackMacro.assets.find((a) => a.label === m.label) || { label: m.label, bias: 'neutral' };
+    return r ? { label: m.label, value: round(r.value), change: r.change, bias: fb.bias, live: true } : { ...fb, live: false };
+  });
+  return { assets, liveCount: assets.filter((a) => a.live).length };
+}
+
 export async function getMacroAssets() {
-  // Live macro quotes require a finance API key. The app exposes env-ready fields and safe fallback values.
   const fearGreed = await getFearGreed();
-  return {
-    ...fallbackMacro,
-    fearGreed,
-    macroSource: enabled('TWELVEDATA_API_KEY') || enabled('POLYGON_API_KEY') ? 'configured-live-ready' : 'mock-macro-with-live-fear-greed',
-    configured: {
-      twelveData: enabled('TWELVEDATA_API_KEY'),
-      polygon: enabled('POLYGON_API_KEY'),
-      fred: enabled('FRED_API_KEY')
+  let assets = fallbackMacro.assets.map((a) => ({ ...a, live: false }));
+  let macroSource = 'mock';
+  try {
+    const live = await getLiveMacro();
+    if (live.liveCount > 0) {
+      assets = live.assets;
+      macroSource = live.liveCount === assets.length ? 'live:stooq' : `partial:stooq(${live.liveCount}/${assets.length})`;
     }
+  } catch { /* keep clearly-labeled mock */ }
+  const marketTemperature = fearGreed != null ? fearGreed : fallbackMacro.marketTemperature;
+  return {
+    ...fallbackMacro, assets, fearGreed, marketTemperature, macroSource,
+    macroLive: macroSource.startsWith('live'),
+    configured: { twelveData: enabled('TWELVEDATA_API_KEY'), polygon: enabled('POLYGON_API_KEY'), fred: enabled('FRED_API_KEY') },
   };
 }
