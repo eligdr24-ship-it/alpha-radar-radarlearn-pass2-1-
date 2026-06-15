@@ -88,16 +88,42 @@ function parseHuman(s) {
   return Number(m[1]) * mult;
 }
 
+// CoinGecko free tier caps at 10k calls/month, so we refresh its market-cap
+// snapshot only periodically and let Binance (no monthly cap) carry every scan.
+let cgCache = null; // { at, coins }
+const CG_REFRESH_MS = Math.max(60e3, Number(process.env.COINGECKO_REFRESH_MS || 15 * 60e3));
+
 // Returns { source, coins, errors:[] } — never throws.
 export async function buildUniverse() {
   const errors = [];
+
+  // Refresh the CoinGecko snapshot at most once per CG_REFRESH_MS (used for
+  // market-cap enrichment + as a fallback). Reuses the cache otherwise.
+  if (!cgCache || Date.now() - cgCache.at > CG_REFRESH_MS) {
+    try { const c = await fromCoinGecko(); if (c.length) cgCache = { at: Date.now(), coins: c }; }
+    catch (err) { errors.push(`coingecko: ${err.message}`); }
+  }
+  const cg = cgCache?.coins || null;
+
+  // Primary: Binance live prices every scan, enriched with CoinGecko market caps
+  // (so type classification / market-cap filters still work).
   try {
-    const coins = await fromCoinGecko();
-    if (coins.length) return { source: 'coingecko-live', coins, errors };
-  } catch (err) { errors.push(`coingecko: ${err.message}`); }
-  try {
-    const coins = await fromBinance();
-    if (coins.length) return { source: 'binance-live', coins, errors };
+    let coins = await fromBinance();
+    if (coins.length) {
+      if (cg) {
+        const m = new Map(cg.map((c) => [c.symbol, c]));
+        coins = coins.map((c) => {
+          const g = m.get(c.symbol);
+          if (!g) return c;
+          const marketCapUsd = g.marketCapUsd || c.marketCapUsd;
+          return { ...c, name: g.name || c.name, marketCapUsd, type: classify(c.symbol, marketCapUsd, c.change24h), sector: g.sector || c.sector };
+        });
+      }
+      return { source: 'binance-live', coins, errors };
+    }
   } catch (err) { errors.push(`binance: ${err.message}`); }
+
+  // Fallback: CoinGecko snapshot (possibly cached) if Binance is unavailable.
+  if (cg) return { source: 'coingecko-live', coins: cg, errors };
   return { source: 'mock-fallback', coins: fromMock(), errors };
 }

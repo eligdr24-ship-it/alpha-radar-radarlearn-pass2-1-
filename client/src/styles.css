@@ -206,3 +206,8 @@ td .alpha{font-size:15px}
   .lsGrid{margin:0 8px 8px}
   .selTitle h2{font-size:20px}
 }
+
+/* current price emphasis */
+.px{color:#e8eefc;font-weight:700}
+td .px{font-size:14px}
+.miniMain .px{color:#cdd6e6;font-weight:600}

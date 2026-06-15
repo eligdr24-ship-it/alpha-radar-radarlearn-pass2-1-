@@ -80,7 +80,7 @@ function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
 function MiniOp({op,onSelect,active}){
   return <button className={"miniOp"+(active?' active':'')} onClick={()=>onSelect(op)}>
     <span className="coinAvatar small">{op.symbol[0]}</span>
-    <div className="miniMain"><b>{op.symbol}{op.elite&&<span className="eliteBadge">⭐</span>}</b><small>α{op.alphaScore} · <span className={op.direction==='LONG'?'green':'red'}>{op.display.target1Move} T1</span></small></div>
+    <div className="miniMain"><b>{op.symbol}{op.elite&&<span className="eliteBadge">⭐</span>}</b><small><span className="px">{op.display.price}</span> · α{op.alphaScore} · <span className={op.direction==='LONG'?'green':'red'}>{op.display.target1Move} T1</span></small></div>
     <b className="rrBig">{op.display.rr}</b>
     <ScoreRing score={op.conviction} danger={op.direction==='SHORT'}/>
   </button>;
@@ -95,7 +95,7 @@ function LongShortLists({items,onSelect,selSym}){
 }
 
 function OpportunityTable({items, onSelect, selSym}) {
-  return <div className="tableWrap"><table><thead><tr><th>#</th><th>Coin</th><th>Alpha</th><th>Direction</th><th>Conviction</th><th>Confidence</th><th>Risk</th><th>Zone</th><th>Target 1</th><th>R:R</th></tr></thead><tbody>{items.slice(0,12).map((op,i)=><tr key={op.symbol} className={op.symbol===selSym?'sel':''} onClick={()=>onSelect(op)}><td>{i+1}</td><td><div className="coinCell"><span className="coinAvatar small">{op.symbol[0]}</span><div><b>{op.symbol}</b><small>{op.name}</small>{op.dataSource&&<small className={"srcBadge "+srcBadgeCls(op.dataSource)}>{op.dataSource}</small>}</div></div></td><td><b className="alpha">{op.alphaScore}</b>{op.elite&&<span className="eliteBadge">⭐</span>}</td><td><Pill tone={op.direction==='LONG'?'long':'short'}>{op.direction}</Pill></td><td><ScoreRing score={op.conviction} danger={op.direction==='SHORT'} /></td><td>{op.confidence}%</td><td><span className={riskCls(op.risk)}>{op.risk}</span></td><td>{op.display.buyZone}</td><td>{op.display.target1}<small className={"mv "+(op.direction==='LONG'?'long':'short')}>{op.display.target1Move}</small></td><td><b className="rr">{op.display.rr}</b></td></tr>)}</tbody></table></div>;
+  return <div className="tableWrap"><table><thead><tr><th>#</th><th>Coin</th><th>Price</th><th>Alpha</th><th>Direction</th><th>Conviction</th><th>Confidence</th><th>Risk</th><th>Zone</th><th>Target 1</th><th>R:R</th></tr></thead><tbody>{items.slice(0,12).map((op,i)=><tr key={op.symbol} className={op.symbol===selSym?'sel':''} onClick={()=>onSelect(op)}><td>{i+1}</td><td><div className="coinCell"><span className="coinAvatar small">{op.symbol[0]}</span><div><b>{op.symbol}</b><small>{op.name}</small>{op.dataSource&&<small className={"srcBadge "+srcBadgeCls(op.dataSource)}>{op.dataSource}</small>}</div></div></td><td><b className="px">{op.display.price}</b></td><td><b className="alpha">{op.alphaScore}</b>{op.elite&&<span className="eliteBadge">⭐</span>}</td><td><Pill tone={op.direction==='LONG'?'long':'short'}>{op.direction}</Pill></td><td><ScoreRing score={op.conviction} danger={op.direction==='SHORT'} /></td><td>{op.confidence}%</td><td><span className={riskCls(op.risk)}>{op.risk}</span></td><td>{op.display.buyZone}</td><td>{op.display.target1}<small className={"mv "+(op.direction==='LONG'?'long':'short')}>{op.display.target1Move}</small></td><td><b className="rr">{op.display.rr}</b></td></tr>)}</tbody></table></div>;
 }
 
 function Analytics({a}){
