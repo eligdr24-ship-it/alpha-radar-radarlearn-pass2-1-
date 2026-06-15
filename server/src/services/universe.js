@@ -93,6 +93,12 @@ function parseHuman(s) {
 let cgCache = null; // { at, coins }
 const CG_REFRESH_MS = Math.max(60e3, Number(process.env.COINGECKO_REFRESH_MS || 15 * 60e3));
 
+// Assign a market-cap rank (1 = largest) used by the Universe selector.
+function rankCoins(coins) {
+  [...coins].sort((a, b) => (b.marketCapUsd || 0) - (a.marketCapUsd || 0)).forEach((c, i) => { c.marketCapRank = i + 1; });
+  return coins;
+}
+
 // Returns { source, coins, errors:[] } — never throws.
 export async function buildUniverse() {
   const errors = [];
@@ -119,11 +125,11 @@ export async function buildUniverse() {
           return { ...c, name: g.name || c.name, marketCapUsd, type: classify(c.symbol, marketCapUsd, c.change24h), sector: g.sector || c.sector };
         });
       }
-      return { source: 'binance-live', coins, errors };
+      return { source: 'binance-live', coins: rankCoins(coins), errors };
     }
   } catch (err) { errors.push(`binance: ${err.message}`); }
 
   // Fallback: CoinGecko snapshot (possibly cached) if Binance is unavailable.
-  if (cg) return { source: 'coingecko-live', coins: cg, errors };
-  return { source: 'mock-fallback', coins: fromMock(), errors };
+  if (cg) return { source: 'coingecko-live', coins: rankCoins(cg), errors };
+  return { source: 'mock-fallback', coins: rankCoins(fromMock()), errors };
 }

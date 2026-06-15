@@ -63,12 +63,12 @@ router.get('/dashboard', async (req, res) => {
 
   res.json({
     version: '1.2.0', dataSource: dash.dataSource, dataStatus, integrations,
-    emerging: dash.emerging, universe: dash.universe, rrFilter, analytics: dash.analytics,
+    emerging: dash.emerging, universe: dash.universe, rrFilter, analytics: dash.analytics, marketRegime: dash.marketRegime,
     updatedAt: dash.updatedAt || new Date().toISOString(),
     macro: dash.macro, narratives: dash.narratives || narratives, opportunities, lastRun: dash.lastRun,
     alerts: [
       { type: 'Scan', title: `Data: ${dataStatus.label}`, text: dataStatus.note || `${dash.universe?.size ?? 0} coins, rescored across scalp/day/swing.`, age: ageSeconds != null ? `${ageSeconds}s ago` : 'now' },
-      top ? { type: 'Opportunity', title: `Top ${top.direction}: ${top.symbol}${top.elite ? ' ⭐ELITE' : ''}`, text: `Alpha ${top.alphaScore} | RR ${top.display.rr} | Conviction ${top.conviction}/100`, age: 'now' } : null,
+      top ? { type: 'Opportunity', title: `Top ${top.direction}: ${top.symbol}${top.elite ? ' 🚀 ELITE' : ''}`, text: `Alpha ${top.alphaScore} | RR ${top.display.rr} | Conviction ${top.conviction}/100`, age: 'now' } : null,
       { type: 'Telegram', title: 'Telegram Alerts', text: integrations.telegram === 'configured' ? 'Configured and ready.' : 'Add TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID to activate.', age: 'config' },
     ].filter(Boolean),
   });

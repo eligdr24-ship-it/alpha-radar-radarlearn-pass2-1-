@@ -369,6 +369,16 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       }
       return buckets.map((b) => ({ bucket: b.label, win_rate: b.n ? +(b.wins / b.n).toFixed(3) : null, avg_return: b.n ? +(b.retSum / b.n).toFixed(4) : null, n: b.n }));
     },
+    async learnWinRateByType({ mode } = {}) {
+      const r = await q(
+        `SELECT s.setup_type AS setup_type,
+                (CASE WHEN o.success_label IN ('target1','target2','stretch') THEN 1.0 ELSE 0.0 END) AS win
+         FROM setups s JOIN outcomes o ON o.setup_id = s.setup_id AND o.horizon = '24h'
+         WHERE ($1::text IS NULL OR s.mode = $1)`, [mode || null]);
+      const m = new Map();
+      for (const x of r.rows) { const e = m.get(x.setup_type) || { setup_type: x.setup_type, wins: 0, n: 0 }; e.wins += Number(x.win); e.n += 1; m.set(x.setup_type, e); }
+      return [...m.values()].map((e) => ({ setup_type: e.setup_type, win_rate: e.n ? e.wins / e.n : 0, n: e.n }));
+    },
     async getRadarLearnStats() {
       const [a, act, oc, ls, lo] = await Promise.all([
         q(`SELECT count(*) AS n FROM setups`), q(`SELECT count(*) AS n FROM setups WHERE status='active'`),
@@ -377,12 +387,13 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       return { setups: Number(a.rows[0].n), activeSetups: Number(act.rows[0].n), outcomes: Number(oc.rows[0].n), lastSetupAt: ls.rows[0].m, lastOutcomeAt: lo.rows[0].m };
     },
     async getBackfillStats() {
-      const [ap, lb, cls] = await Promise.all([
+      const [ap, lb, cls, cc] = await Promise.all([
         q(`SELECT count(*) AS n, max(updated_at) AS m FROM asset_profile`),
         q(`SELECT max(last_backfilled_at) AS m FROM asset_sources`),
         q(`SELECT history_class, count(*) AS n FROM asset_profile GROUP BY history_class`),
+        q(`SELECT count(*) AS n FROM asset_history`),
       ]);
-      return { assets: Number(ap.rows[0].n), lastProfileAt: ap.rows[0].m, lastBackfillAt: lb.rows[0].m, classes: cls.rows.map((r) => ({ history_class: r.history_class, n: Number(r.n) })) };
+      return { assets: Number(ap.rows[0].n), lastProfileAt: ap.rows[0].m, lastBackfillAt: lb.rows[0].m, candles: Number(cc.rows[0].n), classes: cls.rows.map((r) => ({ history_class: r.history_class, n: Number(r.n) })) };
     },
     async getCoverageOverview() {
       const r = await q(`SELECT history_class, COUNT(*) AS n, AVG(depth_score) AS avg_depth, AVG(coverage_days) AS avg_days FROM asset_profile GROUP BY history_class`);

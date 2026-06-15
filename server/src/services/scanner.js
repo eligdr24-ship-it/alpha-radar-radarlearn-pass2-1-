@@ -6,7 +6,7 @@ import { scoreCoinV2 } from '../engines/scoringV2.js';
 import { getScoringInput } from '../engines/historyProvider.js';
 import { buildSeries, historyTier, tierRank } from '../engines/history.js';
 import { getDexScreenerTrending, getGeckoTerminalTrending, getMacroAssets } from './externalApis.js';
-import { evaluatePromotions } from './radarLearn.js';
+import { evaluatePromotions, classifySetupType } from './radarLearn.js';
 import * as store from '../db/store.js';
 
 const MODES = ['scalp', 'day', 'swing'];
@@ -60,6 +60,7 @@ function decorate(scored, mode) {
 
   return {
     ...scored, targets, alphaScore, elite, meetsRR, minRR: MIN_RR[mode] ?? 1.5,
+    setupType: classifySetupType(scored.signalDetail, scored.direction), narrative: scored.sector || 'Crypto',
     trade: { toTarget1: +t1.toFixed(2), toTarget2: +t2.toFixed(2), toStretch: +st.toFixed(2), toInvalidation: +risk.toFixed(2), rr: +rr.toFixed(2) },
     display: {
       price: formatPrice(scored.price),
@@ -218,13 +219,13 @@ export async function getDashboard(mode = 'day') {
   const [opp, snap, universe, lastRun] = await Promise.all([
     store.getOpportunities(), store.getLatestSnapshot(), store.getUniverse(), store.getLastScanRun(),
   ]);
-  const opportunities = opp?.byMode?.[mode] || opp?.byMode?.day || [];
+  let opportunities = opp?.byMode?.[mode] || opp?.byMode?.day || [];
   const stats = computeStats(opportunities);
   const narratives = deriveNarratives(opportunities);
   const rrAnalytics = computeRRAnalytics(opp?.byMode);
 
   // Real 24h win-rate + win-rate-by-RR-bucket from Radar Learn (Postgres).
-  let winRate24h = null, winRateByRR = [];
+  let winRate24h = null, winRateByRR = [], matchByType = {};
   if (store.activeDriver() === 'postgres') {
     try {
       const rows = await store.learnSuccessRate({ mode });
@@ -232,7 +233,16 @@ export async function getDashboard(mode = 'day') {
       if (h && Number(h.n) > 0) winRate24h = Math.round(Number(h.win_rate) * 100);
     } catch { /* leave null */ }
     try { winRateByRR = await store.learnRRBuckets({ mode }); } catch { winRateByRR = []; }
+    try {
+      const rows = await store.learnWinRateByType({ mode });
+      const m = {}; for (const r of rows) if (Number(r.n) >= 3) m[r.setup_type] = Math.round(Number(r.win_rate) * 100);
+      matchByType = m;
+    } catch { /* leave empty */ }
   }
+
+  const temp = snap?.macro?.marketTemperature ?? 50;
+  const marketRegime = temp >= 65 ? 'risk-on' : temp <= 40 ? 'risk-off' : 'neutral';
+  opportunities = opportunities.map((o) => ({ ...o, historicalMatch: matchByType[o.setupType] ?? null, marketRegime }));
 
   const macro = snap?.macro
     ? { ...snap.macro, totalOpportunities: stats.totalOpportunities, avgConfidence: stats.avgConfidence, winRate24h, statsLive: true }
@@ -242,6 +252,7 @@ export async function getDashboard(mode = 'day') {
     ready: Boolean(opp), mode, opportunities,
     dataSource: snap?.source || 'none', updatedAt: opp?.at || null,
     macro, narratives, emerging: snap?.emerging || [],
+    marketRegime,
     analytics: { rr: rrAnalytics, winRateByRR },
     universe: universe ? { size: universe.coins.length, source: universe.source, filter: universe.filter } : null,
     lastRun,

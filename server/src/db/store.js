@@ -75,6 +75,7 @@ export const getAssetProfile = proxy('getAssetProfile');
 export const getAssetProfiles = proxy('getAssetProfiles');
 export const getCoverageOverview = proxy('getCoverageOverview');
 export const learnRRBuckets = proxy('learnRRBuckets');
+export const learnWinRateByType = proxy('learnWinRateByType');
 export const getRadarLearnStats = proxy('getRadarLearnStats');
 export const getBackfillStats = proxy('getBackfillStats');
 export const getCoinHistories = proxy('getCoinHistories');
