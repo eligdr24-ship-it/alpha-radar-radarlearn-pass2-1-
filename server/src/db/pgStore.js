@@ -348,6 +348,42 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       for (const x of r.rows) out[x.asset] = x;
       return out;
     },
+    async learnRRBuckets({ mode } = {}) {
+      const r = await q(`SELECT s.entry_price, s.target1, s.invalidation,
+          (CASE WHEN o.hit_target1 AND NOT o.hit_invalidation THEN 1.0 ELSE 0.0 END) AS win, o.final_return
+        FROM setups s JOIN outcomes o ON o.setup_id=s.setup_id AND o.horizon='24h'
+        WHERE ($1::text IS NULL OR s.mode=$1)`, [mode || null]);
+      const buckets = [
+        { label: '<1.5', lo: 0, hi: 1.5 }, { label: '1.5–2.5', lo: 1.5, hi: 2.5 },
+        { label: '2.5–3.5', lo: 2.5, hi: 3.5 }, { label: '3.5–5', lo: 3.5, hi: 5 },
+        { label: '5+', lo: 5, hi: Infinity },
+      ].map((b) => ({ ...b, wins: 0, retSum: 0, n: 0 }));
+      for (const x of r.rows) {
+        const entry = Number(x.entry_price), t1 = Number(x.target1), inv = Number(x.invalidation);
+        const reward = Math.abs(t1 - entry), riskD = Math.abs(entry - inv);
+        if (!riskD) continue;
+        const rr = reward / riskD;
+        const b = buckets.find((bk) => rr >= bk.lo && rr < bk.hi);
+        if (!b) continue;
+        b.wins += Number(x.win); b.retSum += Number(x.final_return) || 0; b.n += 1;
+      }
+      return buckets.map((b) => ({ bucket: b.label, win_rate: b.n ? +(b.wins / b.n).toFixed(3) : null, avg_return: b.n ? +(b.retSum / b.n).toFixed(4) : null, n: b.n }));
+    },
+    async getRadarLearnStats() {
+      const [a, act, oc, ls, lo] = await Promise.all([
+        q(`SELECT count(*) AS n FROM setups`), q(`SELECT count(*) AS n FROM setups WHERE status='active'`),
+        q(`SELECT count(*) AS n FROM outcomes`), q(`SELECT max(created_at) AS m FROM setups`), q(`SELECT max(resolved_at) AS m FROM outcomes`),
+      ]);
+      return { setups: Number(a.rows[0].n), activeSetups: Number(act.rows[0].n), outcomes: Number(oc.rows[0].n), lastSetupAt: ls.rows[0].m, lastOutcomeAt: lo.rows[0].m };
+    },
+    async getBackfillStats() {
+      const [ap, lb, cls] = await Promise.all([
+        q(`SELECT count(*) AS n, max(updated_at) AS m FROM asset_profile`),
+        q(`SELECT max(last_backfilled_at) AS m FROM asset_sources`),
+        q(`SELECT history_class, count(*) AS n FROM asset_profile GROUP BY history_class`),
+      ]);
+      return { assets: Number(ap.rows[0].n), lastProfileAt: ap.rows[0].m, lastBackfillAt: lb.rows[0].m, classes: cls.rows.map((r) => ({ history_class: r.history_class, n: Number(r.n) })) };
+    },
     async getCoverageOverview() {
       const r = await q(`SELECT history_class, COUNT(*) AS n, AVG(depth_score) AS avg_depth, AVG(coverage_days) AS avg_days FROM asset_profile GROUP BY history_class`);
       return r.rows.map((x) => ({ history_class: x.history_class, n: Number(x.n), avg_depth: Math.round(Number(x.avg_depth) || 0), avg_coverage_days: Math.round(Number(x.avg_days) || 0) }));

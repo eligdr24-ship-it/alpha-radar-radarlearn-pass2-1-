@@ -36,19 +36,35 @@ export function scoreCoin(coin, mode = 'day') {
 export function makeTargets(scored, mode = 'day') {
   const p = scored.price;
   const isShort = scored.direction === 'SHORT';
+  const cl = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const volatility = scored.type === 'meme' ? 0.12 : scored.type === 'emerging' ? 0.10 : scored.type === 'major' ? 0.035 : 0.07;
   const mult = mode === 'scalp' ? 0.35 : mode === 'swing' ? 2.4 : 1;
-  const risk = volatility * mult * 0.55;
-  const t1 = volatility * mult;
-  const t2 = volatility * mult * 1.9;
-  const stretch = volatility * mult * 3.2;
-  const buyLow = isShort ? p * (1 + risk * 0.25) : p * (1 - risk * 0.25);
-  const buyHigh = isShort ? p * (1 + risk * 0.75) : p * (1 - risk * 0.75);
-  const target1 = isShort ? p * (1 - t1) : p * (1 + t1);
-  const target2 = isShort ? p * (1 - t2) : p * (1 + t2);
-  const stretchTarget = isShort ? p * (1 - stretch) : p * (1 + stretch);
-  const invalidation = isShort ? p * (1 + risk) : p * (1 - risk);
-  return { buyZone:[buyLow,buyHigh].sort((a,b)=>a-b), target1, target2, stretchTarget, invalidation };
+  const unit = volatility * mult; // ATR-like move unit
+
+  // Setup quality drives asymmetry: strong, clean, coiled setups earn tighter
+  // stops and extended targets → higher RR. Weak/choppy setups → ~1R.
+  const sd = scored.signalDetail || {};
+  const q = cl(((scored.conviction || 0) * 0.5 + (scored.confidence || 0) * 0.3 + (scored.consensus || 0) * 0.2) / 100, 0, 1);
+  const adx = sd.momentum?.detail?.adx ?? sd.trend?.detail?.adx ?? 0;
+  const trendStrength = cl((adx / 40 + Math.abs(sd.trend?.detail?.emaAlign ?? 0)) / 2, 0, 1);
+  const coil = cl((sd.volatility?.detail?.compression ?? 40) / 100, 0, 1);
+
+  const stopFactor = cl(0.95 - 0.40 * q - 0.15 * coil, 0.40, 1.0);        // tighter when strong/coiled
+  const rrBias = mode === 'scalp' ? 0.82 : mode === 'swing' ? 1.22 : 1.0;  // swings earn wider targets vs stop
+  const targetFactor = cl((0.85 + 1.65 * q + 0.85 * trendStrength) * rrBias, 0.85, 4.2); // farther when strong/trending
+
+  const riskD = unit * stopFactor;
+  const t1D = unit * targetFactor;
+  const t2D = t1D * 1.75;
+  const stretchD = t1D * 2.9;
+
+  const buyLow = isShort ? p * (1 + riskD * 0.25) : p * (1 - riskD * 0.25);
+  const buyHigh = isShort ? p * (1 + riskD * 0.75) : p * (1 - riskD * 0.75);
+  const target1 = isShort ? p * (1 - t1D) : p * (1 + t1D);
+  const target2 = isShort ? p * (1 - t2D) : p * (1 + t2D);
+  const stretchTarget = isShort ? p * (1 - stretchD) : p * (1 + stretchD);
+  const invalidation = isShort ? p * (1 + riskD) : p * (1 - riskD);
+  return { buyZone: [buyLow, buyHigh].sort((a, b) => a - b), target1, target2, stretchTarget, invalidation };
 }
 
 export function formatPrice(n) {

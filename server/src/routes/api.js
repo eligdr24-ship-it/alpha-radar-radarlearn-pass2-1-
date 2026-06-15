@@ -40,7 +40,15 @@ router.get('/dashboard', async (req, res) => {
   const ageSeconds = dash.updatedAt ? Math.round((Date.now() - new Date(dash.updatedAt).getTime()) / 1000) : null;
   const staleAfter = Math.max(600, 3 * 60 * Number(process.env.SCAN_INTERVAL_MINUTES || 2));
   const stale = ageSeconds != null && ageSeconds > staleAfter;
-  const opportunities = dash.opportunities.map((o) => ({ ...o, dataSource: sourceLabel(o.source, stale) }));
+  const labeled = dash.opportunities.map((o) => ({ ...o, dataSource: sourceLabel(o.source, stale) }));
+  // Prioritize asymmetric setups: show those meeting the mode's minimum RR.
+  // If too few qualify, relax to the best-by-AlphaScore and flag it (honest).
+  const qualified = labeled.filter((o) => o.meetsRR);
+  const relaxed = qualified.length < 3;
+  const opportunities = relaxed ? labeled : qualified;
+  const minRR = labeled[0]?.minRR ?? null;
+  const rrFilter = { mode, minRR, qualified: qualified.length, total: labeled.length, relaxed,
+    note: relaxed ? `Only ${qualified.length} setup(s) meet the ${minRR}R minimum for ${mode}; showing best available by Alpha Score.` : null };
   const top = opportunities[0];
   const isLive = /coingecko|binance/.test(dash.dataSource || '') && !stale;
   const dataStatus = {
@@ -55,14 +63,51 @@ router.get('/dashboard', async (req, res) => {
 
   res.json({
     version: '1.2.0', dataSource: dash.dataSource, dataStatus, integrations,
-    emerging: dash.emerging, universe: dash.universe,
+    emerging: dash.emerging, universe: dash.universe, rrFilter, analytics: dash.analytics,
     updatedAt: dash.updatedAt || new Date().toISOString(),
     macro: dash.macro, narratives: dash.narratives || narratives, opportunities, lastRun: dash.lastRun,
     alerts: [
       { type: 'Scan', title: `Data: ${dataStatus.label}`, text: dataStatus.note || `${dash.universe?.size ?? 0} coins, rescored across scalp/day/swing.`, age: ageSeconds != null ? `${ageSeconds}s ago` : 'now' },
-      top ? { type: 'Opportunity', title: `Top ${top.direction}: ${top.symbol}`, text: `Conviction ${top.conviction}/100 | Zone ${top.display.buyZone} | Target ${top.display.target1}`, age: 'now' } : null,
+      top ? { type: 'Opportunity', title: `Top ${top.direction}: ${top.symbol}${top.elite ? ' ⭐ELITE' : ''}`, text: `Alpha ${top.alphaScore} | RR ${top.display.rr} | Conviction ${top.conviction}/100`, age: 'now' } : null,
       { type: 'Telegram', title: 'Telegram Alerts', text: integrations.telegram === 'configured' ? 'Configured and ready.' : 'Add TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID to activate.', age: 'config' },
     ].filter(Boolean),
+  });
+});
+
+// Standalone RR analytics (live RR by mode/class + win-rate by RR bucket).
+router.get('/analytics/rr', async (req, res) => {
+  const dash = await getDashboard(req.query.mode || 'day');
+  res.json({ rr: dash.analytics?.rr || { byMode: [], byClass: [] }, winRateByRR: dash.analytics?.winRateByRR || [] });
+});
+
+// System status — scanner / database / API / backfill / Radar Learn.
+router.get('/system/status', async (req, res) => {
+  const driver = store.activeDriver();
+  const isPg = driver === 'postgres';
+  const [lastRun, integrations] = await Promise.all([store.getLastScanRun(), integrationsStatus()]);
+  const cronEnabled = process.env.DISABLE_CRON !== 'true';
+  const intervalMinutes = Math.min(5, Math.max(1, Number(process.env.SCAN_INTERVAL_MINUTES || 2)));
+  let learn = { enabled: false, note: 'Requires PostgreSQL' };
+  let backfill = { enabled: false, note: 'Requires PostgreSQL' };
+  let coverage = [];
+  if (isPg) {
+    try { learn = { enabled: true, ...(await store.getRadarLearnStats()) }; } catch (e) { learn = { enabled: true, error: e.message }; }
+    try { backfill = { enabled: true, ...(await store.getBackfillStats()) }; } catch (e) { backfill = { enabled: true, error: e.message }; }
+    try { coverage = await store.getCoverageOverview(); } catch { coverage = []; }
+  }
+  const liveData = /coingecko|binance/.test(lastRun?.source || '');
+  res.json({
+    timestamp: new Date().toISOString(),
+    scanner: {
+      ok: lastRun?.status?.startsWith('ok') || false, cronEnabled, intervalMinutes,
+      lastScanAt: lastRun?.startedAt || null, lastScanStatus: lastRun?.status || 'none',
+      source: lastRun?.source || 'none', universeSize: lastRun?.kept ?? null,
+      durationMs: lastRun?.durationMs ?? null, errors: lastRun?.errors || [],
+    },
+    database: { ok: isPg, driver, note: isPg ? 'Connected — persistence + learning active' : 'In-memory (no DATABASE_URL) — data resets on restart' },
+    api: { ok: liveData, liveData, integrations },
+    backfill: { ...backfill, coverage },
+    radarLearn: learn,
   });
 });
 

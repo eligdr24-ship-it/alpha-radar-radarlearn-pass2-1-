@@ -34,6 +34,9 @@ function scoreWithHistory(coin, mode, input, profile) {
   return scoreCoinV2(coin, mode, input);
 }
 
+const MIN_RR = { scalp: 1.5, day: 2.5, swing: 3.0 };
+const ELITE_RR = 5.0;
+
 function decorate(scored, mode) {
   const targets = makeTargets(scored, mode);
   const dir = scored.direction, price = scored.price;
@@ -41,17 +44,30 @@ function decorate(scored, mode) {
   const mv = (to) => (dir === 'LONG' ? ((to - price) / price) * 100 : ((price - to) / price) * 100);
   const fp = (x) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`;
   const t1 = mv(targets.target1), t2 = mv(targets.target2), st = mv(targets.stretchTarget), risk = mv(targets.invalidation);
-  const rr = risk < 0 ? Math.abs(t1 / risk) : null;
+  const rr = risk < 0 ? Math.abs(t1 / risk) : 0;
+
+  // Alpha Score — composite ranking. RR is a major factor (30%).
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  const rrNorm = clamp((rr / ELITE_RR) * 100, 0, 100);
+  const freshness = scored.signals?.freshness ?? 0;
+  const consensus = scored.consensus ?? 0;
+  const alphaScore = Math.round(
+    0.28 * (scored.conviction || 0) + 0.18 * (scored.confidence || 0) +
+    0.30 * rrNorm + 0.12 * freshness + 0.12 * consensus
+  );
+  const elite = rr >= ELITE_RR;
+  const meetsRR = rr >= (MIN_RR[mode] ?? 1.5);
+
   return {
-    ...scored, targets,
-    trade: { toTarget1: +t1.toFixed(2), toTarget2: +t2.toFixed(2), toStretch: +st.toFixed(2), toInvalidation: +risk.toFixed(2), rr: rr != null ? +rr.toFixed(2) : null },
+    ...scored, targets, alphaScore, elite, meetsRR, minRR: MIN_RR[mode] ?? 1.5,
+    trade: { toTarget1: +t1.toFixed(2), toTarget2: +t2.toFixed(2), toStretch: +st.toFixed(2), toInvalidation: +risk.toFixed(2), rr: +rr.toFixed(2) },
     display: {
       price: formatPrice(scored.price),
       buyZone: `${formatPrice(targets.buyZone[0])} - ${formatPrice(targets.buyZone[1])}`,
       target1: formatPrice(targets.target1), target2: formatPrice(targets.target2),
       stretch: formatPrice(targets.stretchTarget), invalidation: formatPrice(targets.invalidation),
       target1Move: fp(t1), target2Move: fp(t2), stretchMove: fp(st), riskMove: fp(risk),
-      rr: rr != null ? `${rr.toFixed(1)}R` : '—',
+      rr: `${rr.toFixed(1)}R`, alphaScore, elite,
     },
   };
 }
@@ -111,7 +127,7 @@ export async function runScan(trigger = 'manual') {
         const input = await getScoringInput(c.symbol, mode, histories[c.symbol] || [], profiles[c.symbol] || null);
         scored.push(decorate(scoreWithHistory(c, mode, input, profiles[c.symbol] || null), mode));
       }
-      byMode[mode] = scored.sort((a, b) => b.conviction - a.conviction);
+      byMode[mode] = scored.sort((a, b) => b.alphaScore - a.alphaScore || b.conviction - a.conviction);
     }
     await store.setOpportunities({ runId, at: startedAt, source: built.source, byMode });
 
@@ -178,6 +194,26 @@ function deriveNarratives(ops) {
     .sort((a, b) => b.strength - a.strength).slice(0, 6);
 }
 
+// Forward-looking RR analytics from the current scan (live, no outcomes needed).
+function computeRRAnalytics(byMode) {
+  if (!byMode) return { byMode: [], byClass: [] };
+  const modeRows = [], classMap = new Map();
+  for (const m of Object.keys(byMode)) {
+    const ops = byMode[m] || [];
+    if (!ops.length) continue;
+    const avg = ops.reduce((s, o) => s + (o.trade?.rr || 0), 0) / ops.length;
+    modeRows.push({ mode: m, avgRR: +avg.toFixed(2), count: ops.length, elite: ops.filter((o) => o.elite).length, meetsMin: ops.filter((o) => o.meetsRR).length });
+    for (const o of ops) {
+      const c = o.history_class || 'unknown';
+      const e = classMap.get(c) || { history_class: c, sum: 0, n: 0, elite: 0 };
+      e.sum += o.trade?.rr || 0; e.n += 1; if (o.elite) e.elite += 1;
+      classMap.set(c, e);
+    }
+  }
+  const byClass = [...classMap.values()].map((e) => ({ history_class: e.history_class, avgRR: +(e.sum / e.n).toFixed(2), count: e.n, elite: e.elite }));
+  return { byMode: modeRows, byClass };
+}
+
 export async function getDashboard(mode = 'day') {
   const [opp, snap, universe, lastRun] = await Promise.all([
     store.getOpportunities(), store.getLatestSnapshot(), store.getUniverse(), store.getLastScanRun(),
@@ -185,16 +221,17 @@ export async function getDashboard(mode = 'day') {
   const opportunities = opp?.byMode?.[mode] || opp?.byMode?.day || [];
   const stats = computeStats(opportunities);
   const narratives = deriveNarratives(opportunities);
+  const rrAnalytics = computeRRAnalytics(opp?.byMode);
 
-  // Real 24h win-rate from Radar Learn outcomes (Postgres). Null until outcomes
-  // accrue — the UI shows "—" rather than a fabricated number.
-  let winRate24h = null;
+  // Real 24h win-rate + win-rate-by-RR-bucket from Radar Learn (Postgres).
+  let winRate24h = null, winRateByRR = [];
   if (store.activeDriver() === 'postgres') {
     try {
       const rows = await store.learnSuccessRate({ mode });
       const h = rows.find((r) => r.horizon === '24h');
       if (h && Number(h.n) > 0) winRate24h = Math.round(Number(h.win_rate) * 100);
     } catch { /* leave null */ }
+    try { winRateByRR = await store.learnRRBuckets({ mode }); } catch { winRateByRR = []; }
   }
 
   const macro = snap?.macro
@@ -205,6 +242,7 @@ export async function getDashboard(mode = 'day') {
     ready: Boolean(opp), mode, opportunities,
     dataSource: snap?.source || 'none', updatedAt: opp?.at || null,
     macro, narratives, emerging: snap?.emerging || [],
+    analytics: { rr: rrAnalytics, winRateByRR },
     universe: universe ? { size: universe.coins.length, source: universe.source, filter: universe.filter } : null,
     lastRun,
   };
