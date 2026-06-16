@@ -544,3 +544,11 @@ h1,h2,h3{overflow-wrap:anywhere}
 .rgWorst{background:#3a1f1f;color:#ff9d9d}
 .patRec{margin-top:8px;font-size:11px;color:#cfd8e8}.patRec small{color:var(--muted)}
 @media (max-width:560px){.patGrid{grid-template-columns:1fr}}
+
+/* ===== Failure Learning (v5.2) display ===== */
+.failPrimary{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.failBadge{background:#3a1f1f;color:#ff9d9d;padding:4px 12px;border-radius:8px;font-size:13px;font-weight:700}
+.failPrimary small{color:var(--muted);font-size:11px}
+.patFails{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.patFails small{color:var(--muted);font-size:11px}
+.failChip{background:#241a1a;color:#e0a0a0;font-size:10px;padding:2px 7px;border-radius:5px}

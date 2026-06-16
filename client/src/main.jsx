@@ -31,6 +31,8 @@ function Ticker({ops}){
 
 /* ===== Priority 1: Selected Coin Hero ===== */
 const CHART_TFS=[['5m','5M'],['15m','15M'],['30m','30M'],['1h','1H'],['4h','4H'],['1d','1D']];
+const REASON_LABELS={failed_to_enter_zone:'Never entered the buy/sell zone',hit_invalidation:'Hit stop / invalidation',failed_to_reach_target:'Timed out without reaching a target',market_regime_changed:'Market regime flipped against the trade',volume_faded:'Volume faded after entry',btc_reversed:'BTC reversed against the trade',macro_risk_off:'Macro turned risk-off (VIX / DXY up)',liquidity_weakness:'Thin liquidity at signal',liquidity_trap:'Liquidity trap — lured favorable, then dumped',narrative_reversal:'Narrative / sector reversed',signal_too_early:'Stopped out early — target reached afterwards',signal_too_late:'Signal too late — move was already extended',unknown:'Cause unclear'};
+const reasonLabel=(r)=>REASON_LABELS[r]||r;
 function useChart(symbol, tf, live){
   const [data,setData]=useState(null);
   useEffect(()=>{ let on=true; setData(null);
@@ -426,7 +428,7 @@ function ExampleLoss({ex}){
     <p className="exDiff"><b>Prediction vs result:</b> predicted {predT1!=null?(predT1>=0?'+':'')+predT1.toFixed(1)+'% to Target 1':'—'}, actual {ex.finalReturn!=null?((ex.finalReturn*100>=0?'+':'')+(ex.finalReturn*100).toFixed(1)+'%'):'—'}{ex.maxAdverse!=null?` · worst drawdown ${(ex.maxAdverse*100).toFixed(1)}%`:''}.</p>
   </div>;
 }
-function PerfBody({p}){
+function PerfBody({p,fb}){
   const o=p.overall;
   const best=[...(p.byHorizon||[])].filter(h=>h.n>=1).sort((a,b)=>(b.win_rate||0)-(a.win_rate||0))[0];
   const ranking=[...(p.byHorizon||[])].sort((a,b)=>HZ_ORDER.indexOf(a.k)-HZ_ORDER.indexOf(b.k));
@@ -457,6 +459,10 @@ function PerfBody({p}){
       </div>
       <ExampleLoss ex={p.exampleLoss}/>
     </div>
+    {fb&&fb.total>0&&<div className="perfGrid"><div className="card perfCard"><h3>🧭 Failure Breakdown <small className="tierNote">classified causes (display-only)</small></h3>
+      <div className="perfRows">{fb.reasons.map((r,i)=><div className="perfRow" key={i}><span className="pk">{reasonLabel(r.reason)}</span><b className="red">{r.count}</b><em>{Math.round(r.share*100)}%</em></div>)}</div>
+      <small className="tierNote">Rule-based classification across {fb.total} resolved losing/expired setups.</small>
+    </div></div>}
     <div className="perfGrid">
       <div className="card perfCard"><h3>🟢 Recent Wins</h3>{p.recentWins.length?p.recentWins.map((w,i)=><div className={"lossRow"+(w.setup_id?" clk":"")} key={i} onClick={()=>w.setup_id&&(window.location.href=`/trade/${w.setup_id}`)}><div className="lrTop"><b>{w.symbol}</b><span className={w.direction==='LONG'?'green':'red'}>{w.direction}</span><span className="lrMode">{w.mode}</span><b className="green lrRet">{retOf(w.final_return)}</b></div><div className="lrSub">{w.success_label} · {w.horizon} · {fmt(w.resolved_at)}</div></div>):<p className="muted2">No wins yet.</p>}</div>
       <div className="card perfCard"><h3>🔴 Recent Losses</h3>{p.recentLosses.length?p.recentLosses.map((w,i)=><div className={"lossRow"+(w.setup_id?" clk":"")} key={i} onClick={()=>w.setup_id&&(window.location.href=`/trade/${w.setup_id}`)}><div className="lrTop"><b>{w.symbol}</b><span className={w.direction==='LONG'?'green':'red'}>{w.direction}</span><span className="lrMode">{w.mode}</span><b className="red lrRet">{retOf(w.final_return)}</b></div><div className="lrSub">{w.success_label==="invalidated"?"invalidated":"failed"} · {w.horizon} · {fmt(w.resolved_at)}</div></div>):<p className="muted2">No losses yet.</p>}</div>
@@ -489,7 +495,7 @@ function SystemPerformance(){
     <div className="hzBar">{HORIZONS_UI.map(([v,l])=><button key={v} className={horizon===v?'active':''} onClick={()=>setHorizon(v)}>{l}</button>)}</div>
     {!d?<div className="loading">Loading performance…</div>
       : empty?<div className="card emptyPerf"><p className="muted2">{d.note||`Waiting for resolved ${horizon==='all'?'':horizon+' '}outcomes. Radar Learn needs more live history.`}</p></div>
-      : <PerfBody p={d.performance}/>}
+      : <PerfBody p={d.performance} fb={d.failureBreakdown}/>}
     <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/patterns">🧩<small>Patterns</small></a><a className="active">📈<small>Performance</small></a><a href="/status">⚙<small>Status</small></a></nav>
   </div>;
 }
@@ -649,7 +655,11 @@ function TradeDetail({setupId}){
 
     <div className="tdGrid">
       <div className="card tdCard"><h3>5 · Why It {result==='Win'?'Won':result==='Loss'?'Lost':'Is '+result}</h3>
-        {reasons.length?<ul className="whyList">{reasons.map((r,i)=><li key={i}>{r}</li>)}</ul>:<p className="muted2">Trade still open — outcome not resolved yet.</p>}
+        {result!=='Win'&&d.failureReason?<>
+          <div className="failPrimary"><span className="failBadge">{reasonLabel(d.failureReason.primary_reason)}</span>{d.failureReason.confidence!=null&&<small>confidence {Math.round(d.failureReason.confidence*100)}%</small>}</div>
+          {Array.isArray(d.failureReason.secondary_reasons)&&d.failureReason.secondary_reasons.length>0&&<ul className="whyList">{d.failureReason.secondary_reasons.slice(0,4).map((s,i)=><li key={i}>{reasonLabel(s.reason)}</li>)}</ul>}
+          <small className="tierNote">Rule-based classification ({d.failureReason.classifier_version||'fl'}) · display-only</small>
+        </>:reasons.length?<ul className="whyList">{reasons.map((r,i)=><li key={i}>{r}</li>)}</ul>:<p className="muted2">Trade still open — outcome not resolved yet.</p>}
       </div>
       <div className="card tdCard"><h3>6 · System Learning</h3>
         <div className="learnSplit">
@@ -711,6 +721,7 @@ function PatternCard({p}){
       {p.best_regime&&<span className="rgBest">Best: {p.best_regime.replace(/_/g,' ')} {p.best_regime_win_rate!=null?Math.round(p.best_regime_win_rate*100)+'%':''}</span>}
       {p.worst_regime&&<span className="rgWorst">Worst: {p.worst_regime.replace(/_/g,' ')} {p.worst_regime_win_rate!=null?Math.round(p.worst_regime_win_rate*100)+'%':''}</span>}
     </div>}
+    {Array.isArray(p.top_failure_reasons)&&p.top_failure_reasons.length>0&&<div className="patFails"><small>Common failures:</small> {p.top_failure_reasons.slice(0,3).map((f,i)=><span className="failChip" key={i}>{reasonLabel(f.reason)} {Math.round(f.share*100)}%</span>)}</div>}
     {p.recommended_conf_adj!=null&&p.recommended_conf_adj!==0&&<div className="patRec">Suggested confidence {p.recommended_conf_adj>0?'+':''}{p.recommended_conf_adj} <small>(display-only)</small></div>}
   </div>;
 }

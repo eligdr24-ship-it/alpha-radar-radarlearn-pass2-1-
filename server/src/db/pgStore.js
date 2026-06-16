@@ -3,6 +3,7 @@
 import pg from 'pg';
 import { runMigrations } from './migrate.js';
 import { patternKeysFor, wilsonLowerBound, shrink, setupResult, rrOf, classifyTrend, recommendedConfAdj, patternStrength, regimeMemory } from '../services/patterns.js';
+import { classifyFailure, rollupFailureReasons } from '../services/failureLearning.js';
 
 const J = (v) => (v == null ? null : JSON.stringify(v));
 
@@ -408,6 +409,103 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       return keys.length;
     },
 
+    // ---- Failure Learning (v5.2) ----
+    // Classify WHY a losing/expired setup failed and store one row per setup. Idempotent.
+    async classifyAndStoreFailure(setupId) {
+      const sres = await q(`SELECT * FROM setups WHERE setup_id=$1`, [setupId]);
+      const setup = sres.rows[0];
+      if (!setup) return null;
+      const outcomes = (await q(`SELECT * FROM outcomes WHERE setup_id=$1`, [setupId])).rows;
+      const result = setupResult(outcomes);
+      const isExpired = setup.status === 'expired';
+      if (!isExpired && !(setup.status === 'resolved' && result.loss)) return null; // wins/open: skip
+      const from = setup.created_at, to = setup.resolved_at || new Date().toISOString();
+      let pricePath = [];
+      try { pricePath = await this.getPricePath(setup.symbol, from, to); } catch { /* ignore */ }
+      let btcReturn = null;
+      try { const bp = await this.getPricePath('BTC', from, to); if (bp.length >= 2 && bp[0].price) btcReturn = (bp[bp.length - 1].price - bp[0].price) / bp[0].price; } catch { /* ignore */ }
+      let volPre = null, volPost = null, liquidityUsd = null, volume24hUsd = null;
+      try {
+        const since = new Date(+new Date(from) - 6 * 3600e3).toISOString();
+        const hist = (await this.getCoinHistories([setup.symbol], since))[setup.symbol] || [];
+        const sigT = +new Date(from);
+        const pre = hist.filter((h) => +new Date(h.at) < sigT).map((h) => h.volume24hUsd).filter((v) => v != null);
+        const post = hist.filter((h) => +new Date(h.at) >= sigT).map((h) => h.volume24hUsd).filter((v) => v != null);
+        volPre = pre.length ? pre.reduce((a, b) => a + b, 0) / pre.length : null;
+        volPost = post.length ? post.reduce((a, b) => a + b, 0) / post.length : null;
+        let nearest = null, nd = Infinity;
+        for (const h of hist) { const d = Math.abs(+new Date(h.at) - sigT); if (d < nd) { nd = d; nearest = h; } }
+        liquidityUsd = nearest?.liquidityUsd ?? null; volume24hUsd = nearest?.volume24hUsd ?? null;
+      } catch { /* ignore */ }
+      // pre-signal run-up: how much of entry->T1 was already covered before the signal
+      let preSignalRunupFrac = null;
+      try {
+        const preStart = new Date(+new Date(from) - 12 * 3600e3).toISOString();
+        const pre = await this.getPricePath(setup.symbol, preStart, from);
+        if (pre.length >= 2 && setup.entry_price && setup.target1) {
+          const p0 = pre[0].price, t1Move = setup.target1 - setup.entry_price;
+          if (t1Move !== 0) preSignalRunupFrac = (setup.entry_price - p0) / t1Move; // long: positive run-up; sign handles short via t1Move sign
+        }
+      } catch { /* ignore */ }
+      // macro risk-off + regime-at-resolve from VIX / DXY over the trade window
+      let macroRiskOff = null, regimeAtResolve = null, macroEvidence = {};
+      try {
+        const vix = await this.getCandlesRange('MACRO:VIX', '1d', from, to);
+        const dxy = await this.getCandlesRange('MACRO:DXY', '1d', from, to);
+        const chg = (rows) => (rows.length >= 2 && rows[0].close ? (rows[rows.length - 1].close - rows[0].close) / rows[0].close : null);
+        const vixChg = chg(vix), dxyChg = chg(dxy);
+        if (vixChg != null || dxyChg != null) {
+          macroEvidence = { vixChg, dxyChg };
+          macroRiskOff = (vixChg != null && vixChg >= 0.10) || (dxyChg != null && dxyChg >= 0.02);
+          regimeAtResolve = macroRiskOff ? 'risk_off' : ((vixChg != null && vixChg <= -0.10) ? 'risk_on' : 'neutral');
+        }
+      } catch { /* ignore */ }
+      // narrative basket: avg realized return of OTHER setups with the same narrative resolved nearby
+      let narrativeReturn = null;
+      try {
+        if (setup.narrative) {
+          const lo = new Date(+new Date(to) - 3 * 86400e3).toISOString();
+          const hi = new Date(+new Date(to) + 3 * 86400e3).toISOString();
+          const r = await q(`SELECT avg(o.final_return) AS a, count(*) AS n
+            FROM setups s JOIN outcomes o ON o.setup_id=s.setup_id AND o.horizon='24h'
+            WHERE s.narrative=$1 AND s.setup_id<>$2 AND s.status='resolved' AND s.resolved_at BETWEEN $3 AND $4`,
+            [setup.narrative, setupId, lo, hi]);
+          if (Number(r.rows[0].n) >= 3 && r.rows[0].a != null) narrativeReturn = Number(r.rows[0].a);
+        }
+      } catch { /* ignore */ }
+      const cls = classifyFailure({ setup, result, pricePath, btcReturn, volPre, volPost, liquidityUsd, volume24hUsd, preSignalRunupFrac, macroRiskOff, regimeAtResolve, macroEvidence, narrativeReturn });
+      if (!cls) return null;
+      await q(`INSERT INTO failure_reasons(setup_id, primary_reason, secondary_reasons, evidence, confidence, classifier_version)
+               VALUES ($1,$2,$3,$4,$5,$6)
+               ON CONFLICT (setup_id) DO UPDATE SET primary_reason=$2, secondary_reasons=$3, evidence=$4, confidence=$5, classifier_version=$6, classified_at=now()`,
+        [setupId, cls.primary_reason, JSON.stringify(cls.secondary_reasons), JSON.stringify(cls.evidence), cls.confidence, cls.classifier_version]);
+      return cls;
+    },
+    async getFailureReason(setupId) {
+      const r = await q(`SELECT * FROM failure_reasons WHERE setup_id=$1`, [setupId]);
+      return r.rows[0] || null;
+    },
+    async backfillFailures({ limit = 100000 } = {}) {
+      const r = await q(`SELECT setup_id FROM setups WHERE status IN ('resolved','expired') ORDER BY resolved_at DESC NULLS LAST LIMIT $1`, [limit]);
+      let classified = 0;
+      for (const row of r.rows) { try { const c = await this.classifyAndStoreFailure(row.setup_id); if (c) classified++; } catch { /* skip */ } }
+      return { scanned: r.rows.length, classified };
+    },
+    async getFailureBreakdown() {
+      const r = await q(`SELECT primary_reason, count(*) AS n FROM failure_reasons GROUP BY primary_reason ORDER BY count(*) DESC`);
+      const total = r.rows.reduce((s, x) => s + Number(x.n), 0);
+      return { total, reasons: r.rows.map((x) => ({ reason: x.primary_reason, count: Number(x.n), share: total ? Number(x.n) / total : 0 })) };
+    },
+
+    // One-time/idempotent: assign patterns for setups that predate the Pattern Library
+    // (membership is only auto-created for setups made after deploy). Safe to re-run.
+    async backfillPatterns({ limit = 100000 } = {}) {
+      const setups = await this.listSetups({ limit });
+      let assigned = 0;
+      for (const s of setups) { try { await this.assignPatterns(s); assigned++; } catch { /* skip malformed row */ } }
+      return { setups: setups.length, assigned };
+    },
+
     // Recompute pattern_performance. Pass {setupId} to limit to that setup's patterns
     // (+ ancestors); otherwise recompute all. Pure aggregation in JS for pg-mem portability.
     async recomputePatterns({ setupId = null, minSample = 12 } = {}) {
@@ -451,6 +549,12 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       const membersByPattern = new Map();
       for (const m of mem) { if (!membersByPattern.has(m.pattern_id)) membersByPattern.set(m.pattern_id, []); membersByPattern.get(m.pattern_id).push(m.setup_id); }
 
+      const frBySetup = new Map();               // failure-reason rollup (v5.2)
+      if (setupIds.length) {
+        const sph = setupIds.map((_, i) => `$${i + 1}`).join(',');
+        for (const f of (await q(`SELECT setup_id, primary_reason FROM failure_reasons WHERE setup_id IN (${sph})`, setupIds)).rows) frBySetup.set(f.setup_id, f.primary_reason);
+      }
+
       const cutoff = Date.now() - 90 * 86400e3;
       const shrunkRateById = new Map();          // for child priors within this pass
       const parentOf = new Map(pats.map((p) => [String(p.pattern_id), p.parent_pattern_id]));
@@ -463,6 +567,7 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
           let n = 0, wins = 0, losses = 0, open = 0, t1 = 0, t2 = 0, str = 0, inv = 0, retSum = 0, retN = 0, rrSum = 0, rrN = 0, ddSum = 0, ddN = 0;
           let first = null, last = null;
           const regime = {};
+          const failPrimaries = [];
           for (const sid of memberIds) {
             const s = setupsById.get(sid); if (!s) continue;
             const ocs = ocsBySetup.get(sid) || [];
@@ -471,7 +576,7 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
             const rt = s.resolved_at ? +new Date(s.resolved_at) : null;
             if (filterRolling && rt != null && rt < cutoff) continue;
             n++;
-            if (r.win) wins++; else losses++;
+            if (r.win) wins++; else { losses++; failPrimaries.push(frBySetup.get(sid) || 'unknown'); }
             if (r.reachedT1) t1++; if (r.reachedT2) t2++; if (r.reachedStretch) str++; if (r.hitInv) inv++;
             if (r.finalReturn != null) { retSum += r.finalReturn; retN++; }
             const rr = rrOf(s); if (rr != null) { rrSum += rr; rrN++; }
@@ -485,7 +590,7 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
           const win_rate_lb = n ? wilsonLowerBound(wins, n) : null;
           return { n, wins, losses, open, t1, t2, str, inv, win_rate, win_rate_lb,
             avg_return: retN ? retSum / retN : null, avg_rr: rrN ? rrSum / rrN : null, avg_drawdown: ddN ? ddSum / ddN : null,
-            regime, first, last };
+            regime, first, last, top_failure_reasons: rollupFailureReasons(failPrimaries) };
         };
         const all = compute(false);
         const roll = compute(true);
@@ -512,14 +617,14 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
             `INSERT INTO pattern_performance(pattern_id, time_window, sample_size, wins, losses, open, win_rate, win_rate_lb, shrunk_win_rate,
                avg_return, avg_rr, avg_drawdown, target1_rate, target2_rate, stretch_rate, invalidation_rate, failure_rate,
                trend, strength, regime_breakdown, best_regime, best_regime_win_rate, worst_regime, worst_regime_win_rate,
-               recommended_conf_adj, activated, first_seen, last_seen, computed_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,now())
+               recommended_conf_adj, activated, first_seen, last_seen, top_failure_reasons, computed_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,now())
              ON CONFLICT (pattern_id, time_window) DO UPDATE SET
                sample_size=$3, wins=$4, losses=$5, open=$6, win_rate=$7, win_rate_lb=$8, shrunk_win_rate=$9,
                avg_return=$10, avg_rr=$11, avg_drawdown=$12, target1_rate=$13, target2_rate=$14, stretch_rate=$15,
                invalidation_rate=$16, failure_rate=$17, trend=$18, strength=$19, regime_breakdown=$20,
                best_regime=$21, best_regime_win_rate=$22, worst_regime=$23, worst_regime_win_rate=$24,
-               recommended_conf_adj=$25, activated=$26, first_seen=$27, last_seen=$28, computed_at=now()`,
+               recommended_conf_adj=$25, activated=$26, first_seen=$27, last_seen=$28, top_failure_reasons=$29, computed_at=now()`,
             [p.pattern_id, win, agg.n, agg.wins, agg.losses, agg.open, agg.win_rate, agg.win_rate_lb, isAll ? shrunk : null,
              agg.avg_return, agg.avg_rr, agg.avg_drawdown,
              agg.n ? agg.t1 / agg.n : null, agg.n ? agg.t2 / agg.n : null, agg.n ? agg.str / agg.n : null,
@@ -527,7 +632,8 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
              isAll ? trend : null, isAll ? strength : null, JSON.stringify(rm.breakdown),
              rm.best?.regime ?? null, rm.best?.win_rate ?? null, rm.worst?.regime ?? null, rm.worst?.win_rate ?? null,
              isAll ? recommendedConfAdj(shrunk) : null, agg.n >= minSample,
-             agg.first ? new Date(agg.first).toISOString() : null, agg.last ? new Date(agg.last).toISOString() : null]);
+             agg.first ? new Date(agg.first).toISOString() : null, agg.last ? new Date(agg.last).toISOString() : null,
+             JSON.stringify(agg.top_failure_reasons || [])]);
         }
       }
       return { patterns: pats.length };
@@ -538,7 +644,7 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
         `SELECT p.pattern_id, p.pattern_name, p.level, p.mode, p.direction, p.history_class, p.setup_type, p.market_regime, p.narrative,
                 pp.sample_size, pp.wins, pp.losses, pp.win_rate, pp.win_rate_lb, pp.shrunk_win_rate, pp.avg_return, pp.avg_rr,
                 pp.invalidation_rate, pp.trend, pp.strength, pp.best_regime, pp.best_regime_win_rate, pp.worst_regime, pp.worst_regime_win_rate,
-                pp.recommended_conf_adj, pp.activated, pp.last_seen
+                pp.recommended_conf_adj, pp.activated, pp.last_seen, pp.top_failure_reasons
          FROM pattern_performance pp JOIN patterns p USING (pattern_id)
          WHERE pp.time_window=$1 AND pp.sample_size > 0
          ORDER BY pp.strength DESC NULLS LAST
@@ -552,7 +658,8 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
         strength: x.strength == null ? null : Number(x.strength),
         best_regime_win_rate: x.best_regime_win_rate == null ? null : Number(x.best_regime_win_rate),
         worst_regime_win_rate: x.worst_regime_win_rate == null ? null : Number(x.worst_regime_win_rate),
-        recommended_conf_adj: x.recommended_conf_adj == null ? null : Number(x.recommended_conf_adj) }));
+        recommended_conf_adj: x.recommended_conf_adj == null ? null : Number(x.recommended_conf_adj),
+        top_failure_reasons: typeof x.top_failure_reasons === 'string' ? JSON.parse(x.top_failure_reasons || '[]') : (x.top_failure_reasons || []) }));
     },
 
     async getPatternDetail(patternId) {

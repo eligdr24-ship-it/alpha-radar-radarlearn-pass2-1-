@@ -96,7 +96,7 @@ export function createMemoryStore() {
     async upsertOutcome() {}, async getOutcomes() { return []; },
     async learnSuccessRate() { return []; }, async learnSignalEdge() { return []; }, async learnSimilar() { return []; },
     async avgReturnForSetups() { return { avg: null, n: 0 }; }, async avgRrForSetups() { return { avg: null, n: 0 }; },
-    async assignPatterns() { return 0; }, async recomputePatterns() { return { patterns: 0 }; },
+    async assignPatterns() { return 0; }, async recomputePatterns() { return { patterns: 0 }; }, async backfillPatterns() { return { setups: 0, assigned: 0 }; },
     async getPatterns() { return []; }, async getPatternDetail() { return null; },
     async matchSetup() { return { available: false, note: 'Pattern Library requires Postgres.' }; },
     async getMeta() {

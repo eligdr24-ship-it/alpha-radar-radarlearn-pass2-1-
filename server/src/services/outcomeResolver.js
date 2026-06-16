@@ -85,6 +85,7 @@ export async function resolveAll() {
       if (filled) await store.updateSetup(s.setup_id, { entry_filled: true, entry_filled_at: new Date().toISOString() });
       else if (now - created > (ENTRY_WINDOW_MS[s.mode] || 6 * 3600e3)) {
         await store.markSetupResolved(s.setup_id, 'expired', 'entry-timeout', 'fail');
+        try { await store.classifyAndStoreFailure(s.setup_id); } catch { /* ignore */ }
         expired++; continue;
       }
     }
@@ -94,6 +95,8 @@ export async function resolveAll() {
     const finalLabel = bestLabel(allLabels.length ? allLabels : ['fail']);
     if (invalidated) { await store.markSetupResolved(s.setup_id, 'resolved', 'invalidation', finalLabel); resolved++; }
     else if (did30d) { await store.markSetupResolved(s.setup_id, 'resolved', 'horizon-complete', finalLabel); resolved++; }
+    // classify WHY it failed (losses/expired only; method self-skips wins) — display-only
+    if (invalidated || did30d) { try { await store.classifyAndStoreFailure(s.setup_id); } catch { /* ignore */ } }
   }
   // refresh Pattern Library stats for newly-resolved setups (additive; never blocks resolution)
   if (resolved > 0) { try { await store.recomputePatterns(); } catch { /* ignore */ } }

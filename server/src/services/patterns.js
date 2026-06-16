@@ -70,6 +70,7 @@ export function setupResult(outcomes) {
     reachedT1: bestRank >= 1, reachedT2: bestRank >= 2, reachedStretch: bestRank >= 3,
     hitInv: ocs.some((o) => o.hit_invalidation),
     finalReturn: best && best.final_return != null ? Number(best.final_return) : null,
+    maxFavorable: best && best.max_favorable_excursion != null ? Number(best.max_favorable_excursion) : null,
     maxAdverse: best && best.max_adverse_excursion != null ? Number(best.max_adverse_excursion) : null,
   };
 }

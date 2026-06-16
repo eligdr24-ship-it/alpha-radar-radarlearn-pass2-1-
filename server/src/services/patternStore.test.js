@@ -90,3 +90,33 @@ test('incremental recompute by setupId refreshes only that setup\'s patterns + a
   assert.ok(rows.length >= 1);
   assert.ok(rows.every((r) => r.sample_size >= 1));
 });
+
+test('backfillPatterns assigns membership for setups created before the library', async () => {
+  const pool = await freshStore();
+  // insert resolved setups DIRECTLY (no assignPatterns), simulating pre-library data
+  for (let i = 0; i < 6; i++) {
+    const id = `old${i}`, label = i < 4 ? 'target1' : 'fail', ret = i < 4 ? 0.1 : -0.05;
+    await pool.query(
+      `INSERT INTO setups (setup_id,symbol,mode,direction,history_class,setup_type,market_regime,narrative,entry_price,target1,invalidation,status,final_label,resolved_at)
+       VALUES ($1,'BTC','day','LONG','long','pullback','risk_on','L1',100,110,95,'resolved',$2,now())`, [id, label]);
+    await pool.query(
+      `INSERT INTO outcomes (setup_id,horizon,success_label,hit_target1,hit_target2,hit_stretch,hit_invalidation,final_return,max_adverse_excursion,resolved_at)
+       VALUES ($1,'24h',$2,$3,false,false,$4,$5,-0.03,now())`, [id, label, label === 'target1', label === 'fail', ret]);
+  }
+  // no patterns yet
+  assert.equal((await store.getPatterns({ window: 'all_time' })).length, 0);
+  const r = await store.backfillPatterns();
+  assert.equal(r.setups, 6);
+  assert.equal(r.assigned, 6);
+  await store.recomputePatterns();
+  const rows = await store.getPatterns({ window: 'all_time' });
+  assert.ok(rows.length >= 1, 'patterns now exist');
+  const l0 = rows.find((p) => p.level === 0);
+  assert.equal(l0.sample_size, 6);
+  assert.equal(l0.wins, 4);
+  // idempotent: re-running does not duplicate members
+  await store.backfillPatterns();
+  const after = await store.getPatterns({ window: 'all_time' });
+  const l0b = after.find((p) => p.level === 0);
+  assert.equal(l0b.sample_size, 6, 're-run did not double-count');
+});

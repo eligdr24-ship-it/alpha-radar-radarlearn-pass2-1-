@@ -152,8 +152,10 @@ router.get('/trade/:setupId', async (req, res) => {
 
   let patternMatch = null;
   try { patternMatch = await store.matchSetup(req.params.setupId); } catch { /* additive */ }
+  let failureReason = null;
+  try { failureReason = await store.getFailureReason(req.params.setupId); } catch { /* additive */ }
 
-  res.json({ available: true, setup: s, signal_values: data.signal_values || [], outcomes: data.outcomes || [], vector: data.vector || null, path, timeline, learning, patternMatch });
+  res.json({ available: true, setup: s, signal_values: data.signal_values || [], outcomes: data.outcomes || [], vector: data.vector || null, path, timeline, learning, patternMatch, failureReason });
 });
 
 // ---- Pattern Library (v5.1) ----
@@ -196,7 +198,9 @@ router.get('/performance', async (req, res) => {
   }
   try {
     const performance = await store.getPerformance({ horizon });
-    res.json({ enabled: true, horizon, performance });
+    let failureBreakdown = null;
+    try { failureBreakdown = await store.getFailureBreakdown(); } catch { /* additive */ }
+    res.json({ enabled: true, horizon, performance, failureBreakdown });
   } catch (e) {
     res.json({ enabled: true, horizon, error: e.message, performance: null });
   }
