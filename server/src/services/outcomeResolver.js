@@ -4,7 +4,7 @@
 import * as store from '../db/store.js';
 import { ENTRY_WINDOW_MS } from './radarLearn.js';
 
-export const HORIZONS = [['1h', 3600e3], ['4h', 4 * 3600e3], ['24h', 24 * 3600e3], ['7d', 7 * 24 * 3600e3], ['30d', 30 * 24 * 3600e3]];
+export const HORIZONS = [['5m', 5 * 60e3], ['15m', 15 * 60e3], ['30m', 30 * 60e3], ['1h', 3600e3], ['4h', 4 * 3600e3], ['24h', 24 * 3600e3], ['7d', 7 * 24 * 3600e3], ['30d', 30 * 24 * 3600e3]];
 const LABEL_RANK = { fail: 0, invalidated: 0, target1: 1, target2: 2, stretch: 3 };
 
 // PURE: label one horizon for a setup given its in-window price path.

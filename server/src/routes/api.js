@@ -80,6 +80,20 @@ router.get('/analytics/rr', async (req, res) => {
   res.json({ rr: dash.analytics?.rr || { byMode: [], byClass: [] }, winRateByRR: dash.analytics?.winRateByRR || [] });
 });
 
+// System Performance — how Radar Learn's own calls are doing, by horizon.
+router.get('/performance', async (req, res) => {
+  const horizon = req.query.horizon || 'all';
+  if (store.activeDriver() !== 'postgres') {
+    return res.json({ enabled: false, horizon, note: 'Waiting for resolved outcomes. Radar Learn needs more live history.', performance: null });
+  }
+  try {
+    const performance = await store.getPerformance({ horizon });
+    res.json({ enabled: true, horizon, performance });
+  } catch (e) {
+    res.json({ enabled: true, horizon, error: e.message, performance: null });
+  }
+});
+
 // System status — scanner / database / API / backfill / Radar Learn.
 router.get('/system/status', async (req, res) => {
   const driver = store.activeDriver();

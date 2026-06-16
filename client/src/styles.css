@@ -254,3 +254,61 @@ td .px{font-size:14px}
   .mSection{display:block}
   .bcMetrics{grid-template-columns:repeat(4,1fr)}
 }
+
+/* ===== System Performance page ===== */
+.perfPage{max-width:1100px;margin:0 auto;padding:0 16px 90px}
+.hzBar{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px}
+.hzBar button{background:#0b1320;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:7px 13px;font-size:13px;font-weight:700;cursor:pointer}
+.hzBar button.active{background:#1c2f52;border-color:#3a72c8;color:#dbe8ff}
+.bestTf{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px;border-color:#2f5fa8;background:linear-gradient(180deg,#0e1d36,#0b1320)}
+.bestTfHead small{color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-size:11px}.bestTfHead h2{margin:2px 0 0;font-size:30px}
+.bestTfStats{display:flex;gap:18px;flex-wrap:wrap}.bestTfStats>div{text-align:center}.bestTfStats small{display:block;color:var(--muted);font-size:11px}.bestTfStats b{font-size:20px}
+.perfStatsGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px}
+.perfStat{background:#0b1320;border:1px solid var(--line);border-radius:10px;padding:11px;text-align:center}
+.perfStat small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}.perfStat b{font-size:19px}
+.perfTable{width:100%;border-collapse:collapse;font-size:13px}.perfTable th,.perfTable td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}.perfTable th:first-child,.perfTable td:first-child{text-align:left}.perfTable tr.sel{background:#12203a}
+.perfGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px}
+.perfCard h3{margin:0 0 10px;font-size:14px}
+.perfRows{display:flex;flex-direction:column;gap:6px}
+.perfRow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:baseline;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.perfRow .pk{font-weight:600;overflow-wrap:anywhere}.perfRow em{color:var(--muted);font-size:11px;text-align:right}
+.emptyPerf{padding:22px;text-align:center}
+
+/* status chips on long/short rows */
+.stChip{font-size:9px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;text-transform:uppercase;letter-spacing:.3px}
+.stElite{background:#3a2f12;color:#ffd884}.stActive{background:#10331f;color:#7ee2a8}.stWatch{background:#1a2233;color:#9fb0c8}
+
+/* show-all scrollable lists + counts */
+.lsScroll{max-height:560px;overflow-y:auto;padding-right:2px}
+.lsCount{font-size:11px;color:var(--muted);font-weight:500;float:right;margin-top:3px}
+.uniCount{color:var(--muted);font-size:12px;margin:2px 0 8px}
+
+/* mobile search + system links + nav buttons */
+.mSearch{padding:8px 12px}.mSearch input{width:100%;background:#0b1320;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:10px 12px;font-size:14px}
+.mSysLinks{display:flex;flex-direction:column;gap:8px}
+.mSysLink{display:block;background:#0b1320;border:1px solid var(--line);border-radius:10px;padding:12px;color:#cfe2ff;text-decoration:none;font-weight:600}
+.bottom button{background:none;border:none;color:var(--muted);font-size:20px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;font-family:inherit}
+.bottom button small,.bottom a small{font-size:10px}
+
+/* ===== Section 6: responsive audit — no text crossing boundaries ===== */
+*{box-sizing:border-box}
+.card,.miniOp,.bigCard,.statCard,.perfCard,.emergeCard,.mAlert,.alert,.selHero{overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.miniMain,.bcTitle,.selTitle,.scRow b,.pk{min-width:0;overflow-wrap:anywhere}
+.miniMain b{display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+h1,h2,h3,p,small,b,span{overflow-wrap:anywhere}
+.tableWrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+img,svg,table{max-width:100%}
+.grid,.perfGrid,.statusGrid,.emergeGrid,.lsGrid{min-width:0}
+.grid>*,.perfGrid>*,.lsGrid>*{min-width:0}
+
+@media (max-width:760px){
+  .perfStatsGrid{grid-template-columns:repeat(2,1fr)}
+  .bestTf{flex-direction:column;align-items:flex-start}
+  .selMetrics{grid-template-columns:repeat(2,1fr)}
+  .selContext{grid-template-columns:1fr}
+  .miniOp{grid-template-columns:26px 1.2fr auto auto auto 42px}
+}
+@media (max-width:440px){
+  .miniOp{grid-template-columns:24px 1fr auto 40px}
+  .miniOp .miniStat:nth-child(3),.miniOp .miniStat:nth-child(4){display:none}
+}

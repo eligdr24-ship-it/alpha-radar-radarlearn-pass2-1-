@@ -85,7 +85,7 @@ function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
 function MiniOp({op,onSelect,active}){
   return <button className={"miniOp"+(active?' active':'')} onClick={()=>onSelect(op)}>
     <span className="coinAvatar small">{op.symbol[0]}</span>
-    <div className="miniMain"><b>{op.symbol}{op.elite&&<span className="eliteBadge">🚀</span>}{op.emerging&&<span className="emergeBadge">⚠️</span>}</b><small className="px">{op.display.price} · α{op.alphaScore}</small></div>
+    <div className="miniMain"><b>{op.symbol}{op.elite&&<span className="eliteBadge">🚀</span>}<span className={"stChip "+(op.elite?'stElite':op.meetsRR?'stActive':'stWatch')}>{op.elite?'Elite':op.meetsRR?'Active':'Watch'}</span></b><small className="px">{op.display.price} · α{op.alphaScore}</small></div>
     <div className="miniStat"><small>Conv</small><b>{op.conviction}</b></div>
     <div className="miniStat"><small>Conf</small><b>{op.confidence}%</b></div>
     <div className="miniStat"><small>Target</small><b className="green">{op.display.target1}</b></div>
@@ -93,11 +93,11 @@ function MiniOp({op,onSelect,active}){
   </button>;
 }
 function LongShortLists({items,onSelect,selSym}){
-  const longs=items.filter(o=>o.direction==='LONG').slice(0,8);
-  const shorts=items.filter(o=>o.direction==='SHORT').slice(0,8);
+  const longs=items.filter(o=>o.direction==='LONG');
+  const shorts=items.filter(o=>o.direction==='SHORT');
   return <div className="lsGrid">
-    <div className="lsCol card"><h3 className="lsHead long">🔥 Top Longs</h3>{longs.length?longs.map(o=><MiniOp key={o.symbol} op={o} onSelect={onSelect} active={o.symbol===selSym}/>):<p className="muted2">No longs match the current filters.</p>}</div>
-    <div className="lsCol card"><h3 className="lsHead short">🔻 Top Shorts</h3>{shorts.length?shorts.map(o=><MiniOp key={o.symbol} op={o} onSelect={onSelect} active={o.symbol===selSym}/>):<p className="muted2">No shorts match the current filters.</p>}</div>
+    <div className="lsCol card"><h3 className="lsHead long">🔥 Top Longs <span className="lsCount">Showing {longs.length}</span></h3><div className="lsScroll">{longs.length?longs.map(o=><MiniOp key={o.symbol} op={o} onSelect={onSelect} active={o.symbol===selSym}/>):<p className="muted2">No longs match the current filters.</p>}</div></div>
+    <div className="lsCol card"><h3 className="lsHead short">🔻 Top Shorts <span className="lsCount">Showing {shorts.length}</span></h3><div className="lsScroll">{shorts.length?shorts.map(o=><MiniOp key={o.symbol} op={o} onSelect={onSelect} active={o.symbol===selSym}/>):<p className="muted2">No shorts match the current filters.</p>}</div></div>
   </div>;
 }
 
@@ -156,13 +156,14 @@ function App(){
   const [pinned,setPinned]=useState(false);
   const data=useDashboard(mode);
   useEffect(()=>{ if(!pinned) setSelSym(null); },[mode]);
+  useEffect(()=>{ if(selSym&&selSym!=='__none__'){ const el=document.getElementById('selHeroTop'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); } },[selSym]);
   const items=useMemo(()=>{
     let arr=data?.opportunities||[];
     if(universe!=='all'&&universe!=='emerging'&&uniRank[universe]) arr=arr.filter(x=>(x.marketCapRank||9999)<=uniRank[universe]);
     if(filter==='long') arr=arr.filter(x=>x.direction==='LONG');
     if(filter==='short') arr=arr.filter(x=>x.direction==='SHORT');
     if(rrMin) arr=arr.filter(x=>(x.trade?.rr||0)>=rrMin);
-    if(query.trim()){const q=query.trim().toLowerCase(); arr=arr.filter(x=>(x.symbol+' '+x.name).toLowerCase().includes(q));}
+    if(query.trim()){const q=query.trim().toLowerCase(); arr=arr.filter(x=>(x.symbol+' '+x.name+' '+(x.narrative||x.sector||'')).toLowerCase().includes(q));}
     return arr;
   },[data,filter,rrMin,universe,query]);
   const all=data?.opportunities||[];
@@ -175,7 +176,7 @@ function App(){
   if(!data) return <div className="loading">Loading Alpha Radar...</div>;
   return <div className="app">
     <aside className="side"><div className="brand"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1><p>Market Intelligence Terminal</p></div></div>
-      <a className="active" href="/">Dashboard</a><a href="/mobile">📱 Mobile View</a><a href="/status">⚙ System Status</a>
+      <a className="active" href="/">Dashboard</a><a href="/mobile">📱 Mobile View</a><a href="/status">⚙ System Status</a><a href="/performance">📈 System Performance</a>
       {['Emerging Coins','Macro Radar','Alerts','Settings'].map(n=><a key={n}>{n}</a>)}
       <div className="pro">ALPHA RADAR PRO<br/><Clock/><button>View Reports</button></div></aside>
     <main>
@@ -184,10 +185,12 @@ function App(){
       <div className="modeBar">{modes.map(m=><button key={m.id} className={mode===m.id?'active':''} onClick={()=>setMode(m.id)}>{m.label}<small>{m.sub}</small></button>)}</div>
       {data.dataStatus&&!data.dataStatus.live&&<div className={"dataBanner "+(/mock/.test(data.dataStatus.source||'')?"mock":"stale")}><b>⚠ {data.dataStatus.label}</b><span>{data.dataStatus.note}</span></div>}
       {data.rrFilter&&data.rrFilter.relaxed&&<div className="dataBanner stale"><b>⚠ RR filter relaxed ({data.rrFilter.minRR}R min)</b><span>{data.rrFilter.note}</span></div>}
+      <div id="selHeroTop"/>
       <SelectedHero op={selected} idx={idx} total={items.length} onPrev={onPrev} onNext={onNext} pinned={pinned} onPin={onPin} onClose={()=>{setSelSym('__none__');setPinned(false);}}/>
       <section className="controls card">
         <div className="liveLine"><span>v{data.version}</span><b className={"srcTag "+(data.dataStatus?.live?"live":"warn")}>{data.dataStatus?.label||('Data: '+data.dataSource)}</b><em>Updated: {new Date(data.updatedAt).toLocaleTimeString()}{data.dataStatus?.ageSeconds!=null?` (${data.dataStatus.ageSeconds}s ago)`:''}</em></div>
         <UniverseSelector universe={universe} setUniverse={setUniverse}/>
+        <div className="uniCount">Showing {items.length} of {(data.opportunities||[]).length} scanned coins{universe!=='all'&&universe!=='emerging'?` · ${UNIVERSES.find(u=>u[0]===universe)?.[1]}`:''}</div>
         <div className="filterRow"><input className="search" type="text" placeholder="🔍 Search coin (e.g. SOL, PEPE)" value={query} onChange={e=>setQuery(e.target.value)}/><div className="filters"><button className={filter==='all'?'active':''} onClick={()=>setFilter('all')}>All</button><button className={filter==='long'?'active':''} onClick={()=>setFilter('long')}>Long</button><button className={filter==='short'?'active danger':''} onClick={()=>setFilter('short')}>Short</button></div><RRChips rrMin={rrMin} setRrMin={setRrMin}/></div>
       </section>
       {universe==='emerging'
@@ -198,7 +201,7 @@ function App(){
           </>}
       <div className="grid"><Gauge value={data.macro.marketTemperature} label="Bullish"/><div className="card"><h3>Score Breakdown</h3><div className="bars">{selected && Object.entries(selected.signals||{}).slice(0,6).map(([k,v])=><label key={k}><span>{k}</span><i><b style={{width:v+'%'}}/></i><em>{v}</em></label>)}</div></div><div className="card"><h3>Emerging Coin Radar</h3>{(data.emerging||[]).slice(0,3).map(e=><div className="macro" key={e.chain+e.symbol}><span>{e.symbol}<small> {e.chain}</small></span><b>{e.earlyScore}</b><em className={e.rugRisk>70?'red':'green'}>Risk {e.rugRisk}</em></div>)}{(!data.emerging||data.emerging.length===0)&&<p>DEX sources ready. Waiting for live data.</p>}</div><Gauge value={data.macro.fearGreed} label="Greed"/><div className="card"><h3>Macro Radar <small className={"srcBadge "+(data.macro.macroLive?"live":"mock")}>{data.macro.macroLive?"LIVE: Stooq":"FALLBACK: Mock"}</small></h3>{data.macro.assets.map(a=><div className="macro" key={a.label}><span>{a.label}{a.live===false&&<small className="srcBadge mock">mock</small>}</span><b>{a.value}</b><em className={a.change>0?'green':'red'}>{a.change>0?'+':''}{a.change}%</em></div>)}</div><div className="card"><h3>Narrative Radar</h3>{data.narratives.map(n=><div className="macro" key={n.narrative}><span>{n.narrative}</span><b>{n.strength}</b><em className={n.momentum>0?'green':'red'}>{n.momentum>0?'+':''}{n.momentum}</em></div>)}</div><Analytics a={data.analytics}/><div className="card"><h3>Recent Alerts</h3>{data.alerts.map(a=><div className="alert" key={a.title}><b>{a.title}</b><p>{a.text}</p><small>{a.age}</small></div>)}</div></div>
     </main>
-    <nav className="bottom"><a className="active" href="/">⌂<small>Home</small></a><a href="/mobile">📱<small>Mobile</small></a><a href="/status">⚙<small>Status</small></a></nav>
+    <nav className="bottom"><a className="active" href="/">⌂<small>Home</small></a><a href="/mobile">📱<small>Mobile</small></a><a href="/status">⚙<small>Status</small></a><a href="/performance">📈<small>Perf</small></a></nav>
   </div>;
 }
 
@@ -229,28 +232,45 @@ function Mobile(){
   const [mode,setMode]=useState('day');
   const [rrMin,setRrMin]=useState(0);
   const [universe,setUniverse]=useState('top100');
+  const [query,setQuery]=useState('');
   const [sel,setSel]=useState(null);
   const data=useDashboard(mode);
+  useEffect(()=>{ if(sel){ const el=document.getElementById('mHero'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); } },[sel]);
   if(!data) return <div className="loading">Loading…</div>;
   let ops=(data.opportunities||[]);
   if(universe!=='all'&&universe!=='emerging'&&uniRank[universe]) ops=ops.filter(o=>(o.marketCapRank||9999)<=uniRank[universe]);
   ops=ops.filter(o=>(o.trade?.rr||0)>=rrMin);
+  if(query.trim()){const qq=query.trim().toLowerCase();ops=ops.filter(o=>(o.symbol+' '+o.name+' '+(o.narrative||'')).toLowerCase().includes(qq));}
   const best=ops[0];
-  const longs=ops.filter(o=>o.direction==='LONG').slice(0,5);
-  const shorts=ops.filter(o=>o.direction==='SHORT').slice(0,5);
+  const longs=ops.filter(o=>o.direction==='LONG');
+  const shorts=ops.filter(o=>o.direction==='SHORT');
+  const go=id=>{const el=document.getElementById(id);if(el)el.scrollIntoView({behavior:'smooth'});};
   return <div className="mobileApp">
-    <div className="mTop"><div className="brand mobile"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1></div></div><a className="mStatusLink" href="/status">⚙</a></div>
+    <div className="mTop"><div className="brand mobile"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1></div></div><a className="mStatusLink" href="/performance">📈</a></div>
+    <div className="mSearch"><input type="text" placeholder="🔍 Search coin or narrative…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
     <Ticker ops={data.opportunities}/>
     {data.dataStatus&&!data.dataStatus.live&&<div className={"dataBanner "+(/mock/.test(data.dataStatus.source||'')?"mock":"stale")}><b>⚠ {data.dataStatus.label}</b></div>}
     <div className="modeBar mob">{modes.map(m=><button key={m.id} className={mode===m.id?'active':''} onClick={()=>setMode(m.id)}>{m.label}</button>)}</div>
-    <div className="uniScroll"><UniverseSelector universe={universe} setUniverse={setUniverse}/></div>
+    <div className="uniScroll"><UniverseSelector universe={universe} setUniverse={setUniverse}/>
+        <div className="uniCount">Showing {items.length} of {(data.opportunities||[]).length} scanned coins{universe!=='all'&&universe!=='emerging'?` · ${UNIVERSES.find(u=>u[0]===universe)?.[1]}`:''}</div></div>
     <RRChips rrMin={rrMin} setRrMin={setRrMin}/>
-    {sel && <MobileDetail op={sel} onClose={()=>setSel(null)}/>}
-    {best && <div className="mSection"><h3>🏆 Best Opportunity</h3><BigCard op={best} onSelect={setSel}/></div>}
-    <div className="mSection"><h3 className="lsHead long">🔥 Top Longs</h3>{longs.length?longs.map(o=><BigCard key={o.symbol} op={o} onSelect={setSel}/>):<p className="muted2">None match the filter.</p>}</div>
-    <div className="mSection"><h3 className="lsHead short">🔻 Top Shorts</h3>{shorts.length?shorts.map(o=><BigCard key={o.symbol} op={o} onSelect={setSel}/>):<p className="muted2">None match the filter.</p>}</div>
-    <div className="mSection"><h3>🔔 Alerts</h3>{(data.alerts||[]).length?data.alerts.map(a=><div className="mAlert" key={a.title}><b>{a.title}</b><p>{a.text}</p><small>{a.age}</small></div>):<p className="muted2">No recent alerts.</p>}</div>
-    <nav className="bottom"><a href="/">⌂<small>Desktop</small></a><a className="active">📱<small>Mobile</small></a><a href="/status">⚙<small>Status</small></a></nav>
+    {universe==='emerging'
+      ? <div className="mSection"><EmergingView emerging={data.emerging}/></div>
+      : <>
+          {best && <div className="mSection" id="mBest"><h3>🏆 Best Opportunity</h3><BigCard op={best} onSelect={setSel}/></div>}
+          {sel && <div id="mHero"><MobileDetail op={sel} onClose={()=>setSel(null)}/></div>}
+          <div className="mSection" id="mLongs"><h3 className="lsHead long">🔥 Top Longs <span className="lsCount">Showing {longs.length}</span></h3>{longs.length?longs.map(o=><BigCard key={o.symbol} op={o} onSelect={setSel}/>):<p className="muted2">None match the filter.</p>}</div>
+          <div className="mSection" id="mShorts"><h3 className="lsHead short">🔻 Top Shorts <span className="lsCount">Showing {shorts.length}</span></h3>{shorts.length?shorts.map(o=><BigCard key={o.symbol} op={o} onSelect={setSel}/>):<p className="muted2">None match the filter.</p>}</div>
+        </>}
+    <div className="mSection" id="mAlerts"><h3>🔔 Alerts</h3>{(data.alerts||[]).length?data.alerts.map(a=><div className="mAlert" key={a.title}><b>{a.title}</b><p>{a.text}</p><small>{a.age}</small></div>):<p className="muted2">No recent alerts.</p>}</div>
+    <div className="mSection"><h3>⚙ System</h3><div className="mSysLinks"><a href="/status" className="mSysLink">System Status →</a><a href="/performance" className="mSysLink">System Performance →</a></div></div>
+    <nav className="bottom">
+      <a href="/">⌂<small>Home</small></a>
+      <button onClick={()=>go('mLongs')}>📊<small>Opps</small></button>
+      <button onClick={()=>setUniverse(universe==='emerging'?'top100':'emerging')}>⚠️<small>Emerging</small></button>
+      <button onClick={()=>go('mAlerts')}>🔔<small>Alerts</small></button>
+      <a href="/status">⚙<small>Settings</small></a>
+    </nav>
   </div>;
 }
 
@@ -277,6 +297,63 @@ function StatusPage(){
   </div>;
 }
 
+/* ===== System Performance (Radar Learn outcome analytics) ===== */
+const HORIZONS_UI=[['5m','5M'],['15m','15M'],['30m','30M'],['1h','1H'],['4h','4H'],['24h','24H'],['7d','7D'],['30d','30D'],['all','All']];
+const HZ_ORDER=['5m','15m','30m','1h','4h','24h','7d','30d'];
+const pctOf=x=>x==null?'—':Math.round(x*100)+'%';
+const retOf=x=>x==null?'—':((x>=0?'+':'')+(x*100).toFixed(2)+'%');
+const rrOf=x=>x==null?'—':x.toFixed(2)+'R';
+function PerfStat({label,value,tone}){return <div className="perfStat"><small>{label}</small><b className={tone||''}>{value}</b></div>;}
+function PerfList({title,rows,dir='desc'}){
+  const sorted=[...(rows||[])].filter(r=>r.n>0).sort((a,b)=>dir==='asc'?(a.win_rate||0)-(b.win_rate||0):(b.win_rate||0)-(a.win_rate||0));
+  return <div className="card perfCard"><h3>{title}</h3>{sorted.length?<div className="perfRows">{sorted.slice(0,6).map(r=><div className="perfRow" key={r.k}><span className="pk">{r.k||'—'}</span><b className={(r.win_rate||0)>=0.5?'green':'red'}>{pctOf(r.win_rate)}</b><em>{r.avg_return!=null?retOf(r.avg_return)+' · ':''}{r.n}</em></div>)}</div>:<p className="muted2">No data yet.</p>}</div>;
+}
+function PerfBody({p}){
+  const o=p.overall;
+  const best=[...(p.byHorizon||[])].filter(h=>h.n>=1).sort((a,b)=>(b.win_rate||0)-(a.win_rate||0))[0];
+  const ranking=[...(p.byHorizon||[])].sort((a,b)=>HZ_ORDER.indexOf(a.k)-HZ_ORDER.indexOf(b.k));
+  return <>
+    {best&&<div className="card bestTf"><div className="bestTfHead"><small>Best Performing Timeframe</small><h2>{best.k.toUpperCase()}</h2></div><div className="bestTfStats"><div><small>Win Rate</small><b className="green">{pctOf(best.win_rate)}</b></div><div><small>Avg Return</small><b>{retOf(best.avg_return)}</b></div><div><small>Resolved Setups</small><b>{best.n}</b></div></div></div>}
+    <div className="perfStatsGrid card">
+      <PerfStat label="Overall Win Rate" value={pctOf(o.win_rate)} tone={(o.win_rate||0)>=0.5?'green':'red'}/>
+      <PerfStat label="Average Return" value={retOf(o.avg_return)}/>
+      <PerfStat label="Average RR" value={rrOf(o.avg_rr)}/>
+      <PerfStat label="Target 1 Hit" value={pctOf(o.t1)}/>
+      <PerfStat label="Target 2 Hit" value={pctOf(o.t2)}/>
+      <PerfStat label="Stretch Hit" value={pctOf(o.st)}/>
+      <PerfStat label="Invalidation" value={pctOf(o.inv)} tone="red"/>
+      <PerfStat label="Resolved Setups" value={o.n}/>
+    </div>
+    <div className="card"><h3>Timeframe Performance</h3><div className="tableWrap"><table className="perfTable"><thead><tr><th>Timeframe</th><th>Win Rate</th><th>Avg Return</th><th>Avg RR</th><th>T1</th><th>T2</th><th>Stretch</th><th>Inval</th><th>Resolved</th></tr></thead><tbody>{ranking.map(h=><tr key={h.k} className={best&&h.k===best.k?'sel':''}><td><b>{h.k.toUpperCase()}</b></td><td className={(h.win_rate||0)>=0.5?'green':'red'}>{pctOf(h.win_rate)}</td><td>{retOf(h.avg_return)}</td><td>{rrOf(h.avg_rr)}</td><td>{pctOf(h.t1)}</td><td>{pctOf(h.t2)}</td><td>{pctOf(h.st)}</td><td>{pctOf(h.inv)}</td><td>{h.n}</td></tr>)}</tbody></table></div></div>
+    <div className="perfGrid">
+      <div className="card perfCard"><h3>🟢 Recent Wins</h3>{p.recentWins.length?p.recentWins.map((w,i)=><div className="perfRow" key={i}><span className="pk">{w.symbol} <em className={w.direction==='LONG'?'green':'red'}>{w.direction}</em></span><b className="green">{retOf(w.final_return)}</b><em>{w.horizon} · {w.success_label}</em></div>):<p className="muted2">None yet.</p>}</div>
+      <div className="card perfCard"><h3>🔴 Recent Losses</h3>{p.recentLosses.length?p.recentLosses.map((w,i)=><div className="perfRow" key={i}><span className="pk">{w.symbol} <em className={w.direction==='LONG'?'green':'red'}>{w.direction}</em></span><b className="red">{retOf(w.final_return)}</b><em>{w.horizon} · {w.success_label}</em></div>):<p className="muted2">None yet.</p>}</div>
+    </div>
+    <div className="perfGrid">
+      <PerfList title="Best Performing Coins" rows={p.coins}/>
+      <PerfList title="Worst Performing Coins" rows={p.coins} dir="asc"/>
+      <PerfList title="Best Long Setups" rows={p.longSetups}/>
+      <PerfList title="Best Short Setups" rows={p.shortSetups}/>
+      <PerfList title="Best Narratives" rows={p.narratives}/>
+      <PerfList title="Best Market Regimes" rows={p.regimes}/>
+    </div>
+  </>;
+}
+function SystemPerformance(){
+  const [horizon,setHorizon]=useState('all');
+  const [d,setD]=useState(null);
+  useEffect(()=>{ let on=true; setD(null); fetch(`/api/performance?horizon=${horizon}`).then(r=>r.json()).then(x=>{if(on)setD(x)}).catch(()=>{}); return()=>{on=false}; },[horizon]);
+  const empty = d && (!d.enabled || !d.performance || (d.performance.overall?.n||0)===0);
+  return <div className="perfPage">
+    <header className="statusHead"><a className="back" href="/">‹ Back</a><h1>📈 System Performance</h1><span className="muted2">How Alpha Radar's own calls resolve, by timeframe</span></header>
+    <div className="hzBar">{HORIZONS_UI.map(([v,l])=><button key={v} className={horizon===v?'active':''} onClick={()=>setHorizon(v)}>{l}</button>)}</div>
+    {!d?<div className="loading">Loading performance…</div>
+      : empty?<div className="card emptyPerf"><p className="muted2">{d.note||`Waiting for resolved ${horizon==='all'?'':horizon+' '}outcomes. Radar Learn needs more live history.`}</p></div>
+      : <PerfBody p={d.performance}/>}
+    <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/status">⚙<small>Status</small></a><a className="active">📈<small>Performance</small></a><a href="/mobile">📱<small>Mobile</small></a></nav>
+  </div>;
+}
+
 const path=window.location.pathname;
-const View = path.startsWith('/mobile') ? Mobile : path.startsWith('/status') ? StatusPage : App;
+const View = path.startsWith('/mobile') ? Mobile : path.startsWith('/status') ? StatusPage : path.startsWith('/performance') ? SystemPerformance : App;
 createRoot(document.getElementById('root')).render(<View/>);

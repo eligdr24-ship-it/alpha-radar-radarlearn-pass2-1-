@@ -369,6 +369,36 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       }
       return buckets.map((b) => ({ bucket: b.label, win_rate: b.n ? +(b.wins / b.n).toFixed(3) : null, avg_return: b.n ? +(b.retSum / b.n).toFixed(4) : null, n: b.n }));
     },
+    async getPerformance({ horizon } = {}) {
+      const hf = horizon && horizon !== 'all';
+      const P = hf ? [horizon] : [];
+      const run = (sql) => q(sql, P);
+      const win = `(CASE WHEN o.success_label IN ('target1','target2','stretch') THEN 1.0 ELSE 0.0 END)`;
+      const reward = `(CASE WHEN s.target1 - s.entry_price >= 0 THEN s.target1 - s.entry_price ELSE s.entry_price - s.target1 END)`;
+      const risk = `(CASE WHEN s.entry_price - s.invalidation >= 0 THEN s.entry_price - s.invalidation ELSE s.invalidation - s.entry_price END)`;
+      const rr = `(CASE WHEN ${risk} <= 0 THEN NULL ELSE ${reward} / ${risk} END)`;
+      const base = `FROM outcomes o JOIN setups s ON s.setup_id = o.setup_id WHERE o.success_label IS NOT NULL${hf ? ' AND o.horizon = $1' : ''}`;
+      const agg = `count(*) AS n, avg(${win}) AS win_rate, avg(o.final_return) AS avg_return, avg(${rr}) AS avg_rr,
+        avg(CASE WHEN o.hit_target1 THEN 1.0 ELSE 0 END) AS t1, avg(CASE WHEN o.hit_target2 THEN 1.0 ELSE 0 END) AS t2,
+        avg(CASE WHEN o.hit_stretch THEN 1.0 ELSE 0 END) AS st, avg(CASE WHEN o.hit_invalidation THEN 1.0 ELSE 0 END) AS inv`;
+      const numAgg = (r) => ({ k: r.k, n: Number(r.n), win_rate: r.win_rate == null ? null : Number(r.win_rate), avg_return: r.avg_return == null ? null : Number(r.avg_return), avg_rr: r.avg_rr == null ? null : Number(r.avg_rr), t1: r.t1 == null ? null : Number(r.t1), t2: r.t2 == null ? null : Number(r.t2), st: r.st == null ? null : Number(r.st), inv: r.inv == null ? null : Number(r.inv) });
+      const grp = async (sql) => (await run(sql)).rows.map(numAgg);
+
+      const overall = numAgg({ k: 'all', ...(await run(`SELECT ${agg} ${base}`)).rows[0] });
+      const byMode = await grp(`SELECT s.mode AS k, ${agg} ${base} GROUP BY s.mode`);
+      // cross-horizon comparison ignores the horizon filter
+      const byHorizon = (await q(`SELECT o.horizon AS k, ${agg} FROM outcomes o JOIN setups s ON s.setup_id = o.setup_id WHERE o.success_label IS NOT NULL GROUP BY o.horizon`)).rows.map(numAgg);
+      const coins = (await grp(`SELECT s.symbol AS k, ${agg} ${base} GROUP BY s.symbol`)).filter((c) => c.n >= 2);
+      const longSetups = await grp(`SELECT s.setup_type AS k, ${agg} ${base} AND s.direction = 'LONG' GROUP BY s.setup_type`);
+      const shortSetups = await grp(`SELECT s.setup_type AS k, ${agg} ${base} AND s.direction = 'SHORT' GROUP BY s.setup_type`);
+      const narratives = await grp(`SELECT s.narrative AS k, ${agg} ${base} GROUP BY s.narrative`);
+      const regimes = await grp(`SELECT s.market_regime AS k, ${agg} ${base} GROUP BY s.market_regime`);
+      const recent = async (cond) => (await run(`SELECT s.symbol, s.direction, s.mode, o.horizon, o.final_return, o.success_label, o.resolved_at ${base} AND o.success_label IN (${cond}) ORDER BY o.resolved_at DESC LIMIT 8`)).rows
+        .map((r) => ({ symbol: r.symbol, direction: r.direction, mode: r.mode, horizon: r.horizon, final_return: r.final_return == null ? null : Number(r.final_return), success_label: r.success_label, resolved_at: r.resolved_at }));
+      const recentWins = await recent(`'target1','target2','stretch'`);
+      const recentLosses = await recent(`'fail','invalidated'`);
+      return { horizon: horizon || 'all', overall, byMode, byHorizon, coins, longSetups, shortSetups, narratives, regimes, recentWins, recentLosses };
+    },
     async learnWinRateByType({ mode } = {}) {
       const r = await q(
         `SELECT s.setup_type AS setup_type,
