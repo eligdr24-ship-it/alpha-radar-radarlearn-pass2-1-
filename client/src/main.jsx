@@ -31,60 +31,93 @@ function Ticker({ops}){
 
 /* ===== Priority 1: Selected Coin Hero ===== */
 const CHART_TFS=[['5m','5M'],['15m','15M'],['30m','30M'],['1h','1H'],['4h','4H'],['1d','1D']];
-function HeroChart({op}){
-  const [tf,setTf]=useState('1h');
+function useChart(symbol, tf, live){
   const [data,setData]=useState(null);
-  const [hover,setHover]=useState(null);
-  useEffect(()=>{ let on=true; setData(null); setHover(null);
-    fetch(`/api/chart/${encodeURIComponent(op.symbol)}?tf=${tf}`).then(r=>r.json()).then(d=>{if(on)setData(d)}).catch(()=>{if(on)setData({series:[],source:'none'})});
-    return()=>{on=false}; },[op.symbol,tf]);
+  useEffect(()=>{ let on=true; setData(null);
+    const load=()=>fetch(`/api/chart/${encodeURIComponent(symbol)}?tf=${tf}`).then(r=>r.json()).then(d=>{if(on)setData(d)}).catch(()=>{if(on)setData({series:[],source:'none'})});
+    load();
+    const id=live?setInterval(load,30000):null;   // live refresh
+    return()=>{on=false; if(id)clearInterval(id);};
+  },[symbol,tf,live]);
+  return data;
+}
+function srcState(op){ const s=op.dataSource||''; if(/LIVE/.test(s)) return {label:'LIVE',cls:'live'}; if(/STALE/.test(s)) return {label:'STALE',cls:'stale'}; return {label:'MOCK',cls:'mock'}; }
+// Shared SVG: compact (preview) shows zone/T1/stop/price; full shows every level + signal + hover.
+function ChartSVG({op, series, compact, hover, setHover}){
   const t=op.targets||{}, entry=op.price, zone=Array.isArray(t.buyZone)?t.buyZone:null;
-  const series=data?.series||[];
-  const W=720,H=300,PADX=8,RPAD=46,PADT=14,PADB=22;
-  const tfBar=<div className="chTfBar">{CHART_TFS.map(([v,l])=><button key={v} className={tf===v?'active':''} onClick={()=>setTf(v)}>{l}</button>)}</div>;
-  const header=<div className="chHead"><h3>📈 Price Chart{data&&data.source&&data.source!=='none'?<small className="chSrc">{data.source==='asset_history'?'candles':'snapshots'}</small>:''}</h3>{op.setupId&&<a className="replayBtn" href={`/trade/${op.setupId}`}>Open Full Trade Replay →</a>}</div>;
-  if(!data) return <div className="heroChart">{header}{tfBar}<div className="chLoading">Loading chart…</div></div>;
-  if(!series.length) return <div className="heroChart">{header}{tfBar}<div className="chartEmpty">Chart history not available yet. Radar Learn is still collecting price data.</div></div>;
+  const W=compact?360:760, H=compact?150:330, PADX=8, RPAD=compact?72:92, PADT=10, PADB=14;
   const prices=series.map(p=>p.price);
-  const levels=[entry,t.target1,t.target2,t.stretchTarget,t.invalidation,zone&&zone[0],zone&&zone[1]].filter(x=>x!=null&&isFinite(x));
-  const lo=Math.min(...prices,...levels), hi=Math.max(...prices,...levels);
+  const lv=[entry,t.target1,t.invalidation,zone&&zone[0],zone&&zone[1],...(compact?[]:[t.target2,t.stretchTarget])].filter(x=>x!=null&&isFinite(x));
+  const lo=Math.min(...prices,...lv), hi=Math.max(...prices,...lv);
   const pad=(hi-lo)*0.08||Math.abs(hi*0.02)||1, ymin=lo-pad, ymax=hi+pad, n=series.length;
   const X=i=>PADX+(n<=1?0:(i/(n-1))*(W-PADX-RPAD));
   const Y=v=>PADT+(1-(v-ymin)/(ymax-ymin))*(H-PADT-PADB);
   const pts=series.map((p,i)=>`${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
-  const line=(v,cls,label)=>v==null||!isFinite(v)?null:<g key={label+v}><line x1={PADX} x2={W-RPAD} y1={Y(v)} y2={Y(v)} className={"lvlLine "+cls}/><text x={W-RPAD+3} y={Y(v)+3} className={"lvlLabel "+cls}>{label}</text></g>;
-  const hi_idx=hover?hover.index:null, hp=hi_idx!=null?series[hi_idx]:null;
-  const pctFromEntry=hp&&entry?((hp.price-entry)/entry*100):null;
-  const leftPct=hi_idx!=null?(X(hi_idx)/W*100):0;
-  const onMove=(clientX,target)=>{const r=target.getBoundingClientRect();const fx=Math.max(0,Math.min(1,(clientX-r.left)/r.width));setHover({index:Math.round(fx*(n-1))});};
-  return <div className="heroChart">
-    {header}{tfBar}
-    <div className="chWrap" onMouseLeave={()=>setHover(null)}
-      onMouseMove={e=>onMove(e.clientX,e.currentTarget)}
-      onTouchMove={e=>onMove(e.touches[0].clientX,e.currentTarget)} onTouchEnd={()=>setHover(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="heroChartSvg" preserveAspectRatio="xMidYMid meet">
-        {zone&&<rect x={PADX} y={Y(Math.max(zone[0],zone[1]))} width={W-PADX-RPAD} height={Math.max(2,Math.abs(Y(zone[0])-Y(zone[1])))} className="zoneBand"/>}
-        {line(t.target1,'t','T1')}{line(t.target2,'t','T2')}{line(t.stretchTarget,'t','Stretch')}
-        {line(t.invalidation,'x','Stop')}{line(entry,'cur','Price')}
-        <polyline points={pts} className="pricePath"/>
-        <line x1={X(n-1)} x2={X(n-1)} y1={PADT} y2={H-PADB} className="sigMarker"/>
-        <circle cx={X(n-1)} cy={Y(series[n-1].price)} r="4" className="outcomePt"/>
-        {hp&&<line x1={X(hi_idx)} x2={X(hi_idx)} y1={PADT} y2={H-PADB} className="hoverLine"/>}
-        {hp&&<circle cx={X(hi_idx)} cy={Y(hp.price)} r="3.5" className="hoverPt"/>}
-      </svg>
-      {hp&&<div className="chTip" style={{left:`${Math.max(2,Math.min(82,leftPct))}%`}}>
-        <b>{fmtP(hp.price)}</b>
-        <span>{new Date(hp.t).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
-        {pctFromEntry!=null&&<em className={pctFromEntry>=0?'green':'red'}>{(pctFromEntry>=0?'+':'')+pctFromEntry.toFixed(2)}% from price</em>}
-      </div>}
+  const lvl=(v,cls,label)=>v==null||!isFinite(v)?null:<g key={label}><line x1={PADX} x2={W-RPAD} y1={Y(v)} y2={Y(v)} className={"lvlLine "+cls}/><text x={W-RPAD+3} y={Y(v)+3} className={"lvlLabel "+cls}>{label} {fmtP(v)}</text></g>;
+  const hi_idx=hover!=null?hover:null, hp=hi_idx!=null?series[hi_idx]:null;
+  const onMove=setHover?(clientX,target)=>{const r=target.getBoundingClientRect();const fx=Math.max(0,Math.min(1,(clientX-r.left)/r.width));setHover(Math.round(fx*(n-1)));}:null;
+  return <svg viewBox={`0 0 ${W} ${H}`} className={"chartSvg"+(compact?" compact":"")} preserveAspectRatio="xMidYMid meet"
+    onMouseLeave={setHover?()=>setHover(null):undefined}
+    onMouseMove={onMove?e=>onMove(e.clientX,e.currentTarget):undefined}
+    onTouchMove={onMove?e=>onMove(e.touches[0].clientX,e.currentTarget):undefined}>
+    {zone&&<rect x={PADX} y={Y(Math.max(zone[0],zone[1]))} width={W-PADX-RPAD} height={Math.max(2,Math.abs(Y(zone[0])-Y(zone[1])))} className="zoneBand"/>}
+    {lvl(t.target1,'t','T1')}
+    {!compact&&lvl(t.target2,'t','T2')}
+    {!compact&&lvl(t.stretchTarget,'t','Stretch')}
+    {lvl(t.invalidation,'x','Stop')}
+    {lvl(entry,'cur','Price')}
+    <polyline points={pts} className="pricePath"/>
+    {!compact&&<line x1={X(n-1)} x2={X(n-1)} y1={PADT} y2={H-PADB} className="sigMarker"/>}
+    <circle cx={X(n-1)} cy={Y(series[n-1].price)} r={compact?3:4} className="outcomePt"/>
+    {hp&&<line x1={X(hi_idx)} x2={X(hi_idx)} y1={PADT} y2={H-PADB} className="hoverLine"/>}
+    {hp&&<circle cx={X(hi_idx)} cy={Y(hp.price)} r="3.5" className="hoverPt"/>}
+  </svg>;
+}
+// Small live preview inside the hero (right column).
+function ChartPreview({op, onOpenFull}){
+  const data=useChart(op.symbol,'15m',true);
+  const ss=srcState(op);
+  return <div className="chartPreview">
+    <div className="cpHead"><span className="cpTitle">Live Preview</span><span className={"srcState "+ss.cls}>{ss.label}</span></div>
+    <div className="cpCanvas">
+      {!data?<div className="chLoading sm">…</div>
+        :!data.series.length?<div className="chartEmpty sm">No price history yet — collecting data.</div>
+        :<ChartSVG op={op} series={data.series} compact/>}
     </div>
-    <div className="chartLegend">
-      <span className="lg zone">Buy/Sell Zone</span><span className="lg t">Targets (T1/T2/Stretch)</span><span className="lg x">Stop</span><span className="lg cur">Current Price</span><span className="lg sig">Signal</span>
+    <button className="seeFullBtn" onClick={onOpenFull}>See Full Chart →</button>
+  </div>;
+}
+// Full chart modal: timeframe buttons, every marker, price labels, tooltip, legend.
+function FullChartModal({op, onClose}){
+  const [tf,setTf]=useState('1h');
+  const [hover,setHover]=useState(null);
+  const data=useChart(op.symbol,tf,true);
+  const ss=srcState(op), series=data?.series||[], n=series.length;
+  const hp=hover!=null?series[hover]:null;
+  const pct=hp&&op.price?((hp.price-op.price)/op.price*100):null;
+  const leftPct=hp?(8+(hover/(Math.max(1,n-1)))*(760-8-92))/760*100:0;
+  return <div className="modalOverlay" onClick={onClose}>
+    <div className="fullChart card" onClick={e=>e.stopPropagation()}>
+      <div className="fcHead">
+        <div className="fcTitle"><h3>{op.symbol} / USDT</h3><b className="px">{op.display.price}</b><span className={"srcState "+ss.cls}>{ss.label}</span><Pill tone={op.direction==='LONG'?'long':'short'}>{op.direction}</Pill></div>
+        <div className="fcActions">{op.setupId&&<a className="replayBtn" href={`/trade/${op.setupId}`}>Open Trade Replay →</a>}<button className="closeBtn" onClick={onClose}>✕</button></div>
+      </div>
+      <div className="chTfBar">{CHART_TFS.map(([v,l])=><button key={v} className={tf===v?'active':''} onClick={()=>setTf(v)}>{l}</button>)}</div>
+      <div className="fcCanvas">
+        {!data?<div className="chLoading">Loading chart…</div>
+          :!series.length?<div className="chartEmpty">Chart history not available yet. Radar Learn is still collecting price data.</div>
+          :<><ChartSVG op={op} series={series} hover={hover} setHover={setHover}/>
+            {hp&&<div className="chTip" style={{left:`${Math.max(2,Math.min(80,leftPct))}%`}}><b>{fmtP(hp.price)}</b><span>{new Date(hp.t).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>{pct!=null&&<em className={pct>=0?'green':'red'}>{(pct>=0?'+':'')+pct.toFixed(2)}% from price</em>}</div>}</>}
+      </div>
+      <div className="chartLegend"><span className="lg zone">Buy/Sell Zone</span><span className="lg t">Targets (T1/T2/Stretch)</span><span className="lg x">Stop</span><span className="lg cur">Current Price</span><span className="lg sig">Signal</span></div>
     </div>
   </div>;
 }
 function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
+  const [showFull,setShowFull]=useState(false);
+  useEffect(()=>{ setShowFull(false); },[op&&op.symbol]);
   if(!op) return null;
+  const ss=srcState(op);
   return <section className="selHero card">
     <div className="selNav">
       <div className="selNavL">
@@ -98,41 +131,49 @@ function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
         <button className="closeBtn" onClick={onClose}>✕</button>
       </div>
     </div>
-    <div className="selHead">
-      <div className="coinAvatar big">{op.symbol[0]}</div>
-      <div className="selTitle"><h2>{op.symbol} <span>/ USDT</span></h2><p>{op.name}</p></div>
-      <Pill tone={op.direction==='LONG'?'long':'short'}>{op.direction}</Pill>
-      {op.elite&&<span className="eliteBadge">🚀 ELITE</span>}
-      {op.dataSource&&<span className={"srcBadge "+srcBadgeCls(op.dataSource)}>{op.dataSource}</span>}
+    <div className="selBody">
+      <div className="selLeft">
+        <div className="selHead">
+          <div className="coinAvatar big">{op.symbol[0]}</div>
+          <div className="selTitle">
+            <h2>{op.symbol} <span>/ USDT</span></h2>
+            <p className="curPrice">Current Price: <b>{op.display.price}</b> <span className={"srcState "+ss.cls}>{ss.label}{op.dataSource?': '+op.dataSource.replace(/^(LIVE|STALE|FALLBACK):/,''):''}</span></p>
+          </div>
+          <Pill tone={op.direction==='LONG'?'long':'short'}>{op.direction}</Pill>
+          {op.elite&&<span className="eliteBadge">🚀 ELITE</span>}
+        </div>
+        <div className="selMetrics">
+          <div><small>Alpha Score</small><b className="alpha">{op.alphaScore}</b></div>
+          <div><small>Conviction</small><b>{op.conviction}</b></div>
+          <div><small>Confidence</small><b>{op.confidence}%</b></div>
+          <div><small>Risk / Reward</small><b className="rrBig">{op.display.rr}</b></div>
+          <div><small>Risk</small><b className={riskCls(op.risk)}>{op.risk}</b></div>
+        </div>
+        <div className="selContext">
+          <div><small>Historical Match</small><b className="green">{op.historicalMatch!=null?op.historicalMatch+'%':'building…'}</b></div>
+          <div><small>Market Regime</small><b className={"regime "+(op.marketRegime||'neutral')}>{op.marketRegime||'neutral'}</b></div>
+          <div><small>Narrative</small><b>{op.narrative||op.sector||'Crypto'}</b></div>
+        </div>
+        <div className="selLevels">
+          <div className="lvl zone"><span>Buy / Sell Zone</span><b>{op.display.buyZone}</b></div>
+          <div className="lvl"><span>Target 1</span><b>{op.display.target1}</b><em className="green">{op.display.target1Move}</em></div>
+          <div className="lvl"><span>Target 2</span><b>{op.display.target2}</b><em className="green">{op.display.target2Move}</em></div>
+          <div className="lvl"><span>Stretch Target</span><b>{op.display.stretch}</b><em className="green">{op.display.stretchMove}</em></div>
+          <div className="lvl danger"><span>Stop / Invalidation</span><b>{op.display.invalidation}</b><em className="red">{op.display.riskMove}</em></div>
+        </div>
+        <div className="selWhy">
+          <h3>Why This Trade{op.warming&&<span className="warmBadge">warming up</span>}</h3>
+          {Array.isArray(op.why)&&op.why.length
+            ? <ul className="whyList">{op.why.map((w,i)=><li key={i}>{w}</li>)}</ul>
+            : <p>Structure, momentum, volume, volatility and breakout engines agree enough to rank this setup.</p>}
+          {op.historyTier&&<small className="tierNote">Engine {op.engine||'v2'} · history {op.historyTier} · class {op.history_class||'—'}{op.agreement!=null?` · agreement ${op.agreement}%`:''}</small>}
+        </div>
+      </div>
+      <div className="selRight">
+        <ChartPreview op={op} onOpenFull={()=>setShowFull(true)}/>
+      </div>
     </div>
-    <div className="selMetrics">
-      <div><small>Alpha Score</small><b className="alpha">{op.alphaScore}</b></div>
-      <div><small>Conviction</small><b>{op.conviction}</b></div>
-      <div><small>Confidence</small><b>{op.confidence}%</b></div>
-      <div><small>Risk / Reward</small><b className="rrBig">{op.display.rr}</b></div>
-      <div><small>Current Price</small><b>{op.display.price}</b></div>
-      <div><small>Risk</small><b className={riskCls(op.risk)}>{op.risk}</b></div>
-    </div>
-    <div className="selContext">
-      <div><small>Historical Match</small><b className="green">{op.historicalMatch!=null?op.historicalMatch+'%':'building…'}</b></div>
-      <div><small>Market Regime</small><b className={"regime "+(op.marketRegime||'neutral')}>{op.marketRegime||'neutral'}</b></div>
-      <div><small>Narrative</small><b>{op.narrative||op.sector||'Crypto'}</b></div>
-    </div>
-    <div className="selLevels">
-      <div className="lvl zone"><span>Buy / Sell Zone</span><b>{op.display.buyZone}</b></div>
-      <div className="lvl"><span>Target 1</span><b>{op.display.target1}</b><em className="green">{op.display.target1Move}</em></div>
-      <div className="lvl"><span>Target 2</span><b>{op.display.target2}</b><em className="green">{op.display.target2Move}</em></div>
-      <div className="lvl"><span>Stretch Target</span><b>{op.display.stretch}</b><em className="green">{op.display.stretchMove}</em></div>
-      <div className="lvl danger"><span>Stop / Invalidation</span><b>{op.display.invalidation}</b><em className="red">{op.display.riskMove}</em></div>
-    </div>
-    <HeroChart op={op}/>
-    <div className="selWhy">
-      <h3>Why This Trade{op.warming&&<span className="warmBadge">warming up</span>}</h3>
-      {Array.isArray(op.why)&&op.why.length
-        ? <ul className="whyList">{op.why.map((w,i)=><li key={i}>{w}</li>)}</ul>
-        : <p>Structure, momentum, volume, volatility and breakout engines agree enough to rank this setup.</p>}
-      {op.historyTier&&<small className="tierNote">Engine {op.engine||'v2'} · history {op.historyTier} · class {op.history_class||'—'}{op.agreement!=null?` · agreement ${op.agreement}%`:''}</small>}
-    </div>
+    {showFull&&<FullChartModal op={op} onClose={()=>setShowFull(false)}/>}
   </section>;
 }
 
