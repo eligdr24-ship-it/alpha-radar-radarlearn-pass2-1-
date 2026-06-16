@@ -501,3 +501,46 @@ main{min-width:0;padding-bottom:60px}
 .replayChart .resolvedText{fill:#9fe4ff;font-size:10px;font-weight:700}
 .chartLegend .lg.cur:before{background:#ffd23f}
 .chartLegend .lg.resolved:before{background:transparent;box-shadow:inset 0 0 0 2px #26d6ff}
+
+/* ===== Global mobile + text-overflow hardening (stabilization) ===== */
+*{min-width:0}
+.card,.tdCard,.learnBlock,.miniMain,.selTitle,.cpHead{overflow-wrap:anywhere;word-break:break-word}
+.tdRow{gap:10px}.tdRow span{flex:0 0 auto}.tdRow b{text-align:right;overflow-wrap:anywhere}
+h1,h2,h3{overflow-wrap:anywhere}
+@media (max-width:560px){
+  .tdGrid{grid-template-columns:1fr}
+  .selMetrics,.selContext{grid-template-columns:repeat(2,1fr)}
+  .fcActions{margin-left:0;flex-wrap:wrap}
+  .fcTitle h3{font-size:16px}
+  .statusHead h1{font-size:20px}
+}
+
+/* ===== Pattern Library page ===== */
+.winToggle{display:flex;gap:6px;margin-left:auto}
+.winToggle button{background:#0e1420;border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer}
+.winToggle button.active{background:#16345a;border-color:#3a72c8;color:#dbe8ff}
+.patIntro{color:var(--muted);font-size:13px;line-height:1.5;margin:4px 2px 14px;max-width:900px}
+.patSection{margin-bottom:18px}
+.patSection h3{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
+.patNote{color:var(--muted);font-size:11px;font-weight:500}
+.patGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.patCard{background:#0a1018;border:1px solid var(--line);border-radius:12px;padding:12px}
+.patTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px}
+.patName{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.patName b{font-size:14px}
+.patLvl{font-size:10px;background:#1b2536;color:#9fb4d6;padding:1px 6px;border-radius:5px}
+.patLowN{font-size:10px;background:#3a2f12;color:#ffd884;padding:1px 6px;border-radius:5px}
+.patStrength{text-align:center;flex:0 0 auto;border-radius:10px;padding:4px 10px;min-width:56px}
+.patStrength b{display:block;font-size:20px;line-height:1}.patStrength small{font-size:9px;opacity:.8}
+.patStrength.sHi{background:rgba(39,247,101,.14);color:#7ee2a8}
+.patStrength.sMid{background:#2a2433;color:#d2b8ef}
+.patStrength.sLo{background:#3a1f1f;color:#ff9d9d}
+.patStats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 10px}
+.patStats>div{display:flex;flex-direction:column}
+.patStats small{color:var(--muted);font-size:10px}.patStats b{font-size:14px}
+.patStats em{font-style:normal;color:var(--muted);font-size:10px}
+.patRegime{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.rgBest,.rgWorst{font-size:11px;padding:2px 8px;border-radius:6px}
+.rgBest{background:rgba(39,247,101,.12);color:#7ee2a8}
+.rgWorst{background:#3a1f1f;color:#ff9d9d}
+.patRec{margin-top:8px;font-size:11px;color:#cfd8e8}.patRec small{color:var(--muted)}
+@media (max-width:560px){.patGrid{grid-template-columns:1fr}}

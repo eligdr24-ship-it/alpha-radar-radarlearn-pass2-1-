@@ -167,6 +167,7 @@ export async function evaluatePromotions({ byMode, macro, narratives, source, ru
           await store.recordSignalValues(setup.setup_id, signalRows(op, mode));
           const vec = buildFeatureVector(op);
           await store.saveSetupVector(setup.setup_id, { ...vec, history_class: op.history_class || 'unknown', mode });
+          try { await store.assignPatterns(setup); } catch { /* pattern library is additive; never block scan */ }
           created++;
         }
       } else if (decision.action === 'update' && active) {

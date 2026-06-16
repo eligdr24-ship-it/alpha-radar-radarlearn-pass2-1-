@@ -95,6 +95,8 @@ export async function resolveAll() {
     if (invalidated) { await store.markSetupResolved(s.setup_id, 'resolved', 'invalidation', finalLabel); resolved++; }
     else if (did30d) { await store.markSetupResolved(s.setup_id, 'resolved', 'horizon-complete', finalLabel); resolved++; }
   }
+  // refresh Pattern Library stats for newly-resolved setups (additive; never blocks resolution)
+  if (resolved > 0) { try { await store.recomputePatterns(); } catch { /* ignore */ } }
   return { setups: setups.length, labeled, resolved, expired };
 }
 

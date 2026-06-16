@@ -273,7 +273,7 @@ function App(){
   if(!data) return <div className="loading">Loading Alpha Radar...</div>;
   return <div className="app">
     <aside className="side"><div className="brand"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1><p>Market Intelligence Terminal</p></div></div>
-      <a className="active" href="/">Dashboard</a><a href="/mobile">📱 Mobile View</a><a href="/status">⚙ System Status</a><a href="/performance">📈 System Performance</a>
+      <a className="active" href="/">Dashboard</a><a href="/mobile">📱 Mobile View</a><a href="/status">⚙ System Status</a><a href="/performance">📈 System Performance</a><a href="/patterns">🧩 Pattern Library</a>
       {['Emerging Coins','Macro Radar','Alerts','Settings'].map(n=><a key={n}>{n}</a>)}
       <div className="pro">ALPHA RADAR PRO<br/><Clock/><button>View Reports</button></div></aside>
     <main>
@@ -298,7 +298,7 @@ function App(){
           </>}
       <div className="grid"><Gauge value={data.macro.marketTemperature} label="Bullish"/><div className="card"><h3>Score Breakdown</h3><div className="bars">{selected && Object.entries(selected.signals||{}).slice(0,6).map(([k,v])=><label key={k}><span>{k}</span><i><b style={{width:v+'%'}}/></i><em>{v}</em></label>)}</div></div><div className="card"><h3>Emerging Coin Radar</h3>{(data.emerging||[]).slice(0,3).map(e=><div className="macro" key={e.chain+e.symbol}><span>{e.symbol}<small> {e.chain}</small></span><b>{e.earlyScore}</b><em className={e.rugRisk>70?'red':'green'}>Risk {e.rugRisk}</em></div>)}{(!data.emerging||data.emerging.length===0)&&<p>DEX sources ready. Waiting for live data.</p>}</div><Gauge value={data.macro.fearGreed} label="Greed"/><div className="card"><h3>Macro Radar <small className={"srcBadge "+(data.macro.macroLive?"live":"mock")}>{data.macro.macroLive?"LIVE: Stooq":"FALLBACK: Mock"}</small></h3>{data.macro.assets.map(a=><div className="macro" key={a.label}><span>{a.label}{a.live===false&&<small className="srcBadge mock">mock</small>}</span><b>{a.value}</b><em className={a.change>0?'green':'red'}>{a.change>0?'+':''}{a.change}%</em></div>)}</div><div className="card"><h3>Narrative Radar</h3>{data.narratives.map(n=><div className="macro" key={n.narrative}><span>{n.narrative}</span><b>{n.strength}</b><em className={n.momentum>0?'green':'red'}>{n.momentum>0?'+':''}{n.momentum}</em></div>)}</div><PerfSummaryCard macro={data.macro}/><div className="card"><h3>Recent Alerts</h3>{data.alerts.map(a=><div className="alert" key={a.title}><b>{a.title}</b><p>{a.text}</p><small>{a.age}</small></div>)}</div></div>
     </main>
-    <nav className="bottom"><a className="active" href="/">⌂<small>Home</small></a><a href="/mobile">📱<small>Mobile</small></a><a href="/status">⚙<small>Status</small></a><a href="/performance">📈<small>Perf</small></a></nav>
+    <nav className="bottom"><a className="active" href="/">⌂<small>Home</small></a><a href="/patterns">🧩<small>Patterns</small></a><a href="/performance">📈<small>Perf</small></a><a href="/status">⚙<small>Status</small></a></nav>
   </div>;
 }
 
@@ -490,7 +490,7 @@ function SystemPerformance(){
     {!d?<div className="loading">Loading performance…</div>
       : empty?<div className="card emptyPerf"><p className="muted2">{d.note||`Waiting for resolved ${horizon==='all'?'':horizon+' '}outcomes. Radar Learn needs more live history.`}</p></div>
       : <PerfBody p={d.performance}/>}
-    <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/status">⚙<small>Status</small></a><a className="active">📈<small>Performance</small></a><a href="/mobile">📱<small>Mobile</small></a></nav>
+    <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/patterns">🧩<small>Patterns</small></a><a className="active">📈<small>Performance</small></a><a href="/status">⚙<small>Status</small></a></nav>
   </div>;
 }
 
@@ -687,7 +687,60 @@ function TradeDetail({setupId}){
   </div>;
 }
 
+function PatternCard({p}){
+  const wr=p.win_rate!=null?Math.round(p.win_rate*100):null;
+  const lb=p.win_rate_lb!=null?Math.round(p.win_rate_lb*100):null;
+  const ret=p.avg_return!=null?((p.avg_return*100>=0?'+':'')+(p.avg_return*100).toFixed(1)+'%'):'—';
+  const strk=p.strength!=null?Math.round(p.strength):null;
+  const strkCls=strk==null?'':strk>=66?'sHi':strk>=40?'sMid':'sLo';
+  const seen=p.last_seen?new Date(p.last_seen).toLocaleDateString([],{month:'short',day:'numeric'}):'—';
+  return <div className="patCard">
+    <div className="patTop">
+      <div className="patName"><b>{p.pattern_name}</b><span className="patLvl">L{p.level}</span>{!p.activated&&<span className="patLowN">low sample</span>}</div>
+      {strk!=null&&<div className={"patStrength "+strkCls}><b>{strk}</b><small>strength</small></div>}
+    </div>
+    <div className="patStats">
+      <div><small>Win rate</small><b className={wr!=null&&wr>=50?'green':'red'}>{wr!=null?wr+'%':'—'}</b>{lb!=null&&<em>LB {lb}%</em>}</div>
+      <div><small>Avg return</small><b className={p.avg_return>=0?'green':'red'}>{ret}</b></div>
+      <div><small>Avg RR</small><b>{p.avg_rr!=null?p.avg_rr.toFixed(2)+'×':'—'}</b></div>
+      <div><small>Sample</small><b>{p.sample_size}</b></div>
+      <div><small>Trend</small><b className={p.trend==='improving'?'green':p.trend==='declining'?'red':''}>{p.trend||'stable'}</b></div>
+      <div><small>Last seen</small><b>{seen}</b></div>
+    </div>
+    {(p.best_regime||p.worst_regime)&&<div className="patRegime">
+      {p.best_regime&&<span className="rgBest">Best: {p.best_regime.replace(/_/g,' ')} {p.best_regime_win_rate!=null?Math.round(p.best_regime_win_rate*100)+'%':''}</span>}
+      {p.worst_regime&&<span className="rgWorst">Worst: {p.worst_regime.replace(/_/g,' ')} {p.worst_regime_win_rate!=null?Math.round(p.worst_regime_win_rate*100)+'%':''}</span>}
+    </div>}
+    {p.recommended_conf_adj!=null&&p.recommended_conf_adj!==0&&<div className="patRec">Suggested confidence {p.recommended_conf_adj>0?'+':''}{p.recommended_conf_adj} <small>(display-only)</small></div>}
+  </div>;
+}
+function PatternSection({title, items, note}){
+  if(!items||!items.length) return null;
+  return <section className="patSection"><h3>{title}{note&&<small className="patNote">{note}</small>}</h3><div className="patGrid">{items.map((p)=><PatternCard key={p.pattern_id} p={p}/>)}</div></section>;
+}
+function PatternsPage(){
+  const [win,setWin]=useState('all_time');
+  const [d,setD]=useState(null);
+  useEffect(()=>{ let on=true; setD(null); fetch(`/api/patterns?window=${win}`).then(r=>r.json()).then(x=>{if(on)setD(x)}).catch(()=>{if(on)setD({enabled:false,error:'Failed to load.'})}); return()=>{on=false}; },[win]);
+  return <div className="tradePage">
+    <header className="statusHead"><a className="back" href="/performance">‹ Back</a><h1>🧩 Pattern Library</h1>
+      <div className="winToggle"><button className={win==='all_time'?'active':''} onClick={()=>setWin('all_time')}>All-time</button><button className={win==='rolling_90d'?'active':''} onClick={()=>setWin('rolling_90d')}>Last 90d</button></div>
+    </header>
+    {!d?<div className="loading">Loading patterns…</div>
+      :d.enabled===false?<div className="card emptyPerf"><p className="muted2">{d.note||'Pattern Library requires Postgres.'}</p></div>
+      :!d.patterns||!d.patterns.length?<div className="card emptyPerf"><p className="muted2">No patterns yet. Patterns form as setups are created and accumulate as they resolve. Check back once Radar Learn has resolved a few setups.</p></div>
+      :<>
+        <p className="patIntro">{d.activatedCount} of {d.count} patterns have enough samples to be reliable. Strength blends Wilson win rate, sample size, trend, stability, return and drawdown. Win rates use Wilson lower bounds and shrink toward their parent pattern, so thin samples aren't over-trusted.</p>
+        <PatternSection title="🏆 Best performing" items={d.best} note="by strength"/>
+        <PatternSection title="📈 Gaining strength" items={d.improving}/>
+        <PatternSection title="📉 Losing edge" items={d.declining}/>
+        <PatternSection title="⚠️ Worst performing" items={d.worst} note="by Wilson lower bound"/>
+      </>}
+    <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/performance">📈<small>Performance</small></a><a className="active">🧩<small>Patterns</small></a><a href="/status">⚙<small>Status</small></a></nav>
+  </div>;
+}
+
 const path=window.location.pathname;
 const tradeMatch=path.match(/^\/trade\/(.+)$/);
-const View = tradeMatch ? (() => <TradeDetail setupId={decodeURIComponent(tradeMatch[1])}/>) : path.startsWith('/mobile') ? Mobile : path.startsWith('/status') ? StatusPage : path.startsWith('/performance') ? SystemPerformance : App;
+const View = tradeMatch ? (() => <TradeDetail setupId={decodeURIComponent(tradeMatch[1])}/>) : path.startsWith('/mobile') ? Mobile : path.startsWith('/status') ? StatusPage : path.startsWith('/patterns') ? PatternsPage : path.startsWith('/performance') ? SystemPerformance : App;
 createRoot(document.getElementById('root')).render(<View/>);

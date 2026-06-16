@@ -2,6 +2,7 @@
 // (used by tests with pg-mem); otherwise builds a real pg Pool.
 import pg from 'pg';
 import { runMigrations } from './migrate.js';
+import { patternKeysFor, wilsonLowerBound, shrink, setupResult, rrOf, classifyTrend, recommendedConfAdj, patternStrength, regimeMemory } from '../services/patterns.js';
 
 const J = (v) => (v == null ? null : JSON.stringify(v));
 
@@ -383,6 +384,229 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       const r = await q(`SELECT avg(CASE WHEN ${risk} <= 0 THEN NULL ELSE ${reward} / ${risk} END) AS a, count(*) AS n FROM setups WHERE setup_id IN (${ph})`, ids);
       return { avg: r.rows[0].a == null ? null : Number(r.rows[0].a), n: Number(r.rows[0].n) };
     },
+
+    // ---- Pattern Library (v5.1) ----
+    // Stamp a setup into its L0..L4 patterns (creating patterns as needed). Additive.
+    async assignPatterns(setup) {
+      const keys = patternKeysFor(setup);
+      let parentId = null;
+      for (const k of keys) {
+        const found = await q(`SELECT pattern_id FROM patterns WHERE pattern_key=$1`, [k.key]);
+        let pid = found.rows[0]?.pattern_id;
+        if (!pid) {
+          const ins = await q(
+            `INSERT INTO patterns(pattern_key, pattern_name, level, parent_pattern_id, mode, direction, history_class, setup_type, market_regime, narrative, conditions)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             ON CONFLICT (pattern_key) DO UPDATE SET updated_at=now() RETURNING pattern_id`,
+            [k.key, k.name, k.level, parentId, k.dims.mode ?? null, k.dims.direction ?? null, k.dims.history_class ?? null,
+             k.dims.setup_type ?? null, k.dims.market_regime ?? null, k.dims.narrative ?? null, JSON.stringify(k.dims)]);
+          pid = ins.rows[0].pattern_id;
+        }
+        await q(`INSERT INTO pattern_members(pattern_id, setup_id, level) VALUES ($1,$2,$3) ON CONFLICT (pattern_id, setup_id) DO NOTHING`, [pid, setup.setup_id, k.level]);
+        parentId = pid;
+      }
+      return keys.length;
+    },
+
+    // Recompute pattern_performance. Pass {setupId} to limit to that setup's patterns
+    // (+ ancestors); otherwise recompute all. Pure aggregation in JS for pg-mem portability.
+    async recomputePatterns({ setupId = null, minSample = 12 } = {}) {
+      // 1) target pattern ids
+      let pats;
+      if (setupId) {
+        const mine = await q(`SELECT pattern_id FROM pattern_members WHERE setup_id=$1`, [setupId]);
+        let frontier = mine.rows.map((r) => r.pattern_id);
+        if (!frontier.length) return { patterns: 0 };
+        // walk up parents iteratively (pg-mem-safe; no recursive CTE) so priors are fresh
+        const seen = new Map();
+        while (frontier.length) {
+          const ph = frontier.map((_, i) => `$${i + 1}`).join(',');
+          const rows = (await q(`SELECT pattern_id, parent_pattern_id, level FROM patterns WHERE pattern_id IN (${ph})`, frontier)).rows;
+          const next = [];
+          for (const r of rows) { if (!seen.has(r.pattern_id)) { seen.set(r.pattern_id, r); if (r.parent_pattern_id != null) next.push(r.parent_pattern_id); } }
+          frontier = [...new Set(next)];
+        }
+        pats = [...seen.values()];
+      } else {
+        pats = (await q(`SELECT pattern_id, parent_pattern_id, level FROM patterns`)).rows;
+      }
+      if (!pats.length) return { patterns: 0 };
+      pats.sort((a, b) => a.level - b.level); // L0 first so parents computed before children
+      const ids = pats.map((p) => p.pattern_id);
+      const ph = ids.map((_, i) => `$${i + 1}`).join(',');
+
+      // 2) load members + their setups + outcomes for the target patterns
+      const mem = (await q(`SELECT pattern_id, setup_id FROM pattern_members WHERE pattern_id IN (${ph})`, ids)).rows;
+      const setupIds = [...new Set(mem.map((m) => m.setup_id))];
+      const setupsById = new Map();
+      const ocsBySetup = new Map();
+      if (setupIds.length) {
+        const sph = setupIds.map((_, i) => `$${i + 1}`).join(',');
+        for (const s of (await q(`SELECT setup_id, status, market_regime, entry_price, target1, invalidation, resolved_at FROM setups WHERE setup_id IN (${sph})`, setupIds)).rows) setupsById.set(s.setup_id, s);
+        for (const o of (await q(`SELECT setup_id, success_label, hit_target1, hit_target2, hit_stretch, hit_invalidation, final_return, max_adverse_excursion FROM outcomes WHERE setup_id IN (${sph})`, setupIds)).rows) {
+          if (!ocsBySetup.has(o.setup_id)) ocsBySetup.set(o.setup_id, []);
+          ocsBySetup.get(o.setup_id).push(o);
+        }
+      }
+      const membersByPattern = new Map();
+      for (const m of mem) { if (!membersByPattern.has(m.pattern_id)) membersByPattern.set(m.pattern_id, []); membersByPattern.get(m.pattern_id).push(m.setup_id); }
+
+      const cutoff = Date.now() - 90 * 86400e3;
+      const shrunkRateById = new Map();          // for child priors within this pass
+      const parentOf = new Map(pats.map((p) => [String(p.pattern_id), p.parent_pattern_id]));
+      const globalPrior = 0.5;
+
+      // 3) aggregate per pattern, per window
+      for (const p of pats) {
+        const memberIds = membersByPattern.get(p.pattern_id) || [];
+        const compute = (filterRolling) => {
+          let n = 0, wins = 0, losses = 0, open = 0, t1 = 0, t2 = 0, str = 0, inv = 0, retSum = 0, retN = 0, rrSum = 0, rrN = 0, ddSum = 0, ddN = 0;
+          let first = null, last = null;
+          const regime = {};
+          for (const sid of memberIds) {
+            const s = setupsById.get(sid); if (!s) continue;
+            const ocs = ocsBySetup.get(sid) || [];
+            const r = setupResult(ocs);
+            if (!r.resolved) { open++; continue; }
+            const rt = s.resolved_at ? +new Date(s.resolved_at) : null;
+            if (filterRolling && rt != null && rt < cutoff) continue;
+            n++;
+            if (r.win) wins++; else losses++;
+            if (r.reachedT1) t1++; if (r.reachedT2) t2++; if (r.reachedStretch) str++; if (r.hitInv) inv++;
+            if (r.finalReturn != null) { retSum += r.finalReturn; retN++; }
+            const rr = rrOf(s); if (rr != null) { rrSum += rr; rrN++; }
+            if (r.maxAdverse != null) { ddSum += r.maxAdverse; ddN++; }
+            if (rt != null) { if (first == null || rt < first) first = rt; if (last == null || rt > last) last = rt; }
+            const rg = s.market_regime || 'unknown';
+            regime[rg] = regime[rg] || { n: 0, wins: 0 };
+            regime[rg].n++; if (r.win) regime[rg].wins++;
+          }
+          const win_rate = n ? wins / n : null;
+          const win_rate_lb = n ? wilsonLowerBound(wins, n) : null;
+          return { n, wins, losses, open, t1, t2, str, inv, win_rate, win_rate_lb,
+            avg_return: retN ? retSum / retN : null, avg_rr: rrN ? rrSum / rrN : null, avg_drawdown: ddN ? ddSum / ddN : null,
+            regime, first, last };
+        };
+        const all = compute(false);
+        const roll = compute(true);
+
+        // shrinkage toward parent's shrunk rate (this pass), else stored, else global
+        let prior = globalPrior;
+        const par = parentOf.get(String(p.pattern_id));
+        if (par != null && shrunkRateById.has(par)) prior = shrunkRateById.get(par);
+        else if (par != null) {
+          const ps = await q(`SELECT shrunk_win_rate FROM pattern_performance WHERE pattern_id=$1 AND time_window='all_time'`, [par]);
+          if (ps.rows[0]?.shrunk_win_rate != null) prior = Number(ps.rows[0].shrunk_win_rate);
+        }
+        const shrunk = all.win_rate != null ? shrink(all.win_rate, all.n, prior) : prior;
+        shrunkRateById.set(p.pattern_id, shrunk);
+
+        const trend = classifyTrend(roll.win_rate_lb, all.win_rate_lb, roll.n);
+        const rm = regimeMemory(all.regime);
+        const strength = patternStrength({ win_rate_lb: all.win_rate_lb ?? 0, sample_size: all.n,
+          trend, invalidation_rate: all.n ? all.inv / all.n : 0, avg_return: all.avg_return ?? 0, avg_drawdown: all.avg_drawdown ?? 0 });
+
+        for (const [win, agg] of [['all_time', all], ['rolling_90d', roll]]) {
+          const isAll = win === 'all_time';
+          await q(
+            `INSERT INTO pattern_performance(pattern_id, time_window, sample_size, wins, losses, open, win_rate, win_rate_lb, shrunk_win_rate,
+               avg_return, avg_rr, avg_drawdown, target1_rate, target2_rate, stretch_rate, invalidation_rate, failure_rate,
+               trend, strength, regime_breakdown, best_regime, best_regime_win_rate, worst_regime, worst_regime_win_rate,
+               recommended_conf_adj, activated, first_seen, last_seen, computed_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,now())
+             ON CONFLICT (pattern_id, time_window) DO UPDATE SET
+               sample_size=$3, wins=$4, losses=$5, open=$6, win_rate=$7, win_rate_lb=$8, shrunk_win_rate=$9,
+               avg_return=$10, avg_rr=$11, avg_drawdown=$12, target1_rate=$13, target2_rate=$14, stretch_rate=$15,
+               invalidation_rate=$16, failure_rate=$17, trend=$18, strength=$19, regime_breakdown=$20,
+               best_regime=$21, best_regime_win_rate=$22, worst_regime=$23, worst_regime_win_rate=$24,
+               recommended_conf_adj=$25, activated=$26, first_seen=$27, last_seen=$28, computed_at=now()`,
+            [p.pattern_id, win, agg.n, agg.wins, agg.losses, agg.open, agg.win_rate, agg.win_rate_lb, isAll ? shrunk : null,
+             agg.avg_return, agg.avg_rr, agg.avg_drawdown,
+             agg.n ? agg.t1 / agg.n : null, agg.n ? agg.t2 / agg.n : null, agg.n ? agg.str / agg.n : null,
+             agg.n ? agg.inv / agg.n : null, agg.n ? agg.losses / agg.n : null,
+             isAll ? trend : null, isAll ? strength : null, JSON.stringify(rm.breakdown),
+             rm.best?.regime ?? null, rm.best?.win_rate ?? null, rm.worst?.regime ?? null, rm.worst?.win_rate ?? null,
+             isAll ? recommendedConfAdj(shrunk) : null, agg.n >= minSample,
+             agg.first ? new Date(agg.first).toISOString() : null, agg.last ? new Date(agg.last).toISOString() : null]);
+        }
+      }
+      return { patterns: pats.length };
+    },
+
+    async getPatterns({ window = 'all_time', limit = 200 } = {}) {
+      const r = await q(
+        `SELECT p.pattern_id, p.pattern_name, p.level, p.mode, p.direction, p.history_class, p.setup_type, p.market_regime, p.narrative,
+                pp.sample_size, pp.wins, pp.losses, pp.win_rate, pp.win_rate_lb, pp.shrunk_win_rate, pp.avg_return, pp.avg_rr,
+                pp.invalidation_rate, pp.trend, pp.strength, pp.best_regime, pp.best_regime_win_rate, pp.worst_regime, pp.worst_regime_win_rate,
+                pp.recommended_conf_adj, pp.activated, pp.last_seen
+         FROM pattern_performance pp JOIN patterns p USING (pattern_id)
+         WHERE pp.time_window=$1 AND pp.sample_size > 0
+         ORDER BY pp.strength DESC NULLS LAST
+         LIMIT $2`, [window, limit]);
+      return r.rows.map((x) => ({ ...x,
+        sample_size: Number(x.sample_size), wins: Number(x.wins), losses: Number(x.losses),
+        win_rate: x.win_rate == null ? null : Number(x.win_rate), win_rate_lb: x.win_rate_lb == null ? null : Number(x.win_rate_lb),
+        shrunk_win_rate: x.shrunk_win_rate == null ? null : Number(x.shrunk_win_rate),
+        avg_return: x.avg_return == null ? null : Number(x.avg_return), avg_rr: x.avg_rr == null ? null : Number(x.avg_rr),
+        invalidation_rate: x.invalidation_rate == null ? null : Number(x.invalidation_rate),
+        strength: x.strength == null ? null : Number(x.strength),
+        best_regime_win_rate: x.best_regime_win_rate == null ? null : Number(x.best_regime_win_rate),
+        worst_regime_win_rate: x.worst_regime_win_rate == null ? null : Number(x.worst_regime_win_rate),
+        recommended_conf_adj: x.recommended_conf_adj == null ? null : Number(x.recommended_conf_adj) }));
+    },
+
+    async getPatternDetail(patternId) {
+      const p = await q(`SELECT * FROM patterns WHERE pattern_id=$1`, [patternId]);
+      if (!p.rows.length) return null;
+      const perf = await q(`SELECT * FROM pattern_performance WHERE pattern_id=$1`, [patternId]);
+      const byWin = {};
+      for (const row of perf.rows) byWin[row.time_window] = row;
+      return { pattern: p.rows[0], performance: byWin };
+    },
+
+    // §2 Similar Setup Matching object — cohort = most-specific activated pattern
+    // (fallback down the ladder), stats over RESOLVED members EXCLUDING the current setup.
+    async matchSetup(setupId, { minMatchN = 8 } = {}) {
+      const mem = (await q(`SELECT pm.pattern_id, p.level, p.pattern_name FROM pattern_members pm JOIN patterns p USING (pattern_id) WHERE pm.setup_id=$1 ORDER BY p.level DESC`, [setupId])).rows;
+      if (!mem.length) return { available: false, note: 'No pattern membership yet.' };
+      let chosen = null;
+      for (const m of mem) { // most specific first; pick first with enough resolved peers
+        const cnt = await q(`SELECT count(*) AS n FROM pattern_members pm JOIN setups s USING (setup_id)
+          WHERE pm.pattern_id=$1 AND s.setup_id<>$2 AND s.status='resolved'`, [m.pattern_id, setupId]);
+        const n = Number(cnt.rows[0].n);
+        if (n >= minMatchN) { chosen = { ...m, n }; break; }
+        if (!chosen) chosen = { ...m, n }; // coarsest fallback (L0) if nothing meets the bar
+      }
+      const fellBack = chosen.level < mem[0].level;
+      // resolved cohort (exclude current)
+      const cohort = (await q(`SELECT s.setup_id FROM pattern_members pm JOIN setups s USING (setup_id)
+        WHERE pm.pattern_id=$1 AND s.setup_id<>$2 AND s.status='resolved'`, [chosen.pattern_id, setupId])).rows.map((r) => r.setup_id);
+      let n = 0, wins = 0, t1 = 0, t2 = 0, inv = 0, retSum = 0, retN = 0;
+      if (cohort.length) {
+        const ph = cohort.map((_, i) => `$${i + 1}`).join(',');
+        const ocs = (await q(`SELECT setup_id, success_label, hit_target1, hit_target2, hit_invalidation, final_return FROM outcomes WHERE setup_id IN (${ph})`, cohort)).rows;
+        const by = new Map();
+        for (const o of ocs) { if (!by.has(o.setup_id)) by.set(o.setup_id, []); by.get(o.setup_id).push(o); }
+        for (const sid of cohort) {
+          const r = setupResult(by.get(sid) || []);
+          if (!r.resolved) continue;
+          n++; if (r.win) wins++; if (r.reachedT1) t1++; if (r.reachedT2) t2++; if (r.hitInv) inv++;
+          if (r.finalReturn != null) { retSum += r.finalReturn; retN++; }
+        }
+      }
+      const avgRr = await this.avgRrForSetups(cohort);
+      // vector top-N closest (existing kNN), independent of the current setup
+      const closest = (await this.learnSimilar(setupId, 6)).map((c) => ({ setup_id: c.setup_id, symbol: c.symbol, similarity: c.similarity, final_label: c.final_label }));
+      return {
+        available: true,
+        pattern_id: chosen.pattern_id, pattern_name: chosen.pattern_name, level: chosen.level, fellBack,
+        n, win_rate: n ? wins / n : null, win_rate_lb: n ? wilsonLowerBound(wins, n) : null,
+        avg_return: retN ? retSum / retN : null, avg_rr: avgRr.avg,
+        target1_rate: n ? t1 / n : null, target2_rate: n ? t2 / n : null, invalidation_rate: n ? inv / n : null,
+        closest,
+      };
+    },
+
     async getPerformance({ horizon } = {}) {
       const hf = horizon && horizon !== 'all';
       const P = hf ? [horizon] : [];

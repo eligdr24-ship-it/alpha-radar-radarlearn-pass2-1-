@@ -150,7 +150,42 @@ router.get('/trade/:setupId', async (req, res) => {
     items: similar.slice(0, 8),
   };
 
-  res.json({ available: true, setup: s, signal_values: data.signal_values || [], outcomes: data.outcomes || [], vector: data.vector || null, path, timeline, learning });
+  let patternMatch = null;
+  try { patternMatch = await store.matchSetup(req.params.setupId); } catch { /* additive */ }
+
+  res.json({ available: true, setup: s, signal_values: data.signal_values || [], outcomes: data.outcomes || [], vector: data.vector || null, path, timeline, learning, patternMatch });
+});
+
+// ---- Pattern Library (v5.1) ----
+router.get('/patterns', async (req, res) => {
+  if (store.activeDriver() !== 'postgres') return res.json({ enabled: false, note: 'Pattern Library requires Postgres.', window: req.query.window || 'all_time', patterns: [] });
+  try {
+    const window = req.query.window === 'rolling_90d' ? 'rolling_90d' : 'all_time';
+    const rows = await store.getPatterns({ window, limit: Number(req.query.limit) || 200 });
+    const activated = rows.filter((p) => p.activated);
+    const pool = activated.length ? activated : rows;          // fall back to all if none activated yet
+    const byStrength = [...pool].sort((a, b) => (b.strength ?? -1) - (a.strength ?? -1));
+    const best = byStrength.slice(0, 8);
+    const worst = [...pool].sort((a, b) => (a.win_rate_lb ?? 1) - (b.win_rate_lb ?? 1)).slice(0, 8);
+    const improving = pool.filter((p) => p.trend === 'improving').sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0)).slice(0, 8);
+    const declining = pool.filter((p) => p.trend === 'declining').sort((a, b) => (a.strength ?? 0) - (b.strength ?? 0)).slice(0, 8);
+    res.json({ enabled: true, window, count: rows.length, activatedCount: activated.length, patterns: byStrength, best, worst, improving, declining });
+  } catch (e) { res.status(500).json({ enabled: true, error: e.message, patterns: [] }); }
+});
+
+router.get('/patterns/:id', async (req, res) => {
+  if (store.activeDriver() !== 'postgres') return res.json({ available: false, note: 'Pattern Library requires Postgres.' });
+  try {
+    const detail = await store.getPatternDetail(Number(req.params.id));
+    if (!detail) return res.json({ available: false, note: 'Pattern not found.' });
+    res.json({ available: true, ...detail });
+  } catch (e) { res.status(500).json({ available: false, error: e.message }); }
+});
+
+router.get('/similar/:setupId', async (req, res) => {
+  if (store.activeDriver() !== 'postgres') return res.json({ available: false, note: 'Pattern Library requires Postgres.' });
+  try { res.json(await store.matchSetup(req.params.setupId)); }
+  catch (e) { res.status(500).json({ available: false, error: e.message }); }
 });
 
 // System Performance — how Radar Learn's own calls are doing, by horizon.

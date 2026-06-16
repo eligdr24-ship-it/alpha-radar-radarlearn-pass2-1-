@@ -15,7 +15,8 @@
     "test": "node --test server/src/engines/*.test.js",
     "backfill:outcomes": "node server/scripts/backfillOutcomes.js",
     "backfill:history": "node server/scripts/backfillHistory.js",
-    "backfill:labels": "node server/scripts/recomputeLabels.js"
+    "backfill:labels": "node server/scripts/recomputeLabels.js",
+    "recompute:patterns": "node server/scripts/recomputePatterns.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

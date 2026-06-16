@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import api from './routes/api.js';
 import { initStore, activeDriver, getUniverse } from './db/store.js';
+import * as store from './db/store.js';
 import { runScan } from './services/scanner.js';
 import { resolveAll } from './services/outcomeResolver.js';
 import { runBackfill } from './services/historyBackfill.js';
@@ -58,6 +59,14 @@ app.listen(PORT, () => {
         } catch (e) { console.error('[history] keep-fresh failed:', e.message); }
       });
       console.log(`[cron] deep-history keep-fresh ("${refreshExpr}")`);
+
+      // Pattern Library full recompute (daily). Incremental recompute also runs after each resolver pass.
+      const patExpr = process.env.PATTERN_RECOMPUTE_CRON || '30 3 * * *';
+      cron.schedule(patExpr, async () => {
+        try { const r = await store.recomputePatterns(); console.log(`[patterns] recomputed ${r.patterns || 0} patterns`); }
+        catch (e) { console.error('[patterns] recompute failed:', e.message); }
+      });
+      console.log(`[cron] pattern recompute ("${patExpr}")`);
     }
   } else {
     console.log('[cron] disabled (DISABLE_CRON=true)');
