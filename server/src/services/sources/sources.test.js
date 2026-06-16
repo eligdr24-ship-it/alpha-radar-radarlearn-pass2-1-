@@ -35,3 +35,15 @@ test('parseMarketChart maps CoinGecko close-only candles', () => {
   const c = parseMarketChart(data);
   assert.equal(c.length, 2); assert.equal(c[0].close, 42000); assert.equal(c[0].open, null); assert.equal(c[1].volume, 2e9);
 });
+
+test('parseStooqCsv ignores a non-CSV error page (no crash)', () => {
+  assert.deepEqual(parseStooqCsv('Exceeded the daily hits limit. Please try again tomorrow.'), []);
+});
+
+test('parseStooqCsv skips rows with invalid dates instead of throwing', () => {
+  const csv = 'Date,Open,High,Low,Close,Volume\nN/D,,,,N/D,\n2024-01-03,1,2,0,1.5,3';
+  const c = parseStooqCsv(csv);
+  assert.equal(c.length, 1);
+  assert.equal(c[0].close, 1.5);
+  assert.ok(!Number.isNaN(new Date(c[0].ts).getTime()));
+});

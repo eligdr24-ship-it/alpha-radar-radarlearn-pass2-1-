@@ -14,7 +14,8 @@
     "db:migrate": "node server/scripts/migrate.js",
     "test": "node --test server/src/engines/*.test.js",
     "backfill:outcomes": "node server/scripts/backfillOutcomes.js",
-    "backfill:history": "node server/scripts/backfillHistory.js"
+    "backfill:history": "node server/scripts/backfillHistory.js",
+    "backfill:labels": "node server/scripts/recomputeLabels.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

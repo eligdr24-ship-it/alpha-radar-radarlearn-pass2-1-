@@ -80,6 +80,32 @@ router.get('/analytics/rr', async (req, res) => {
   res.json({ rr: dash.analytics?.rr || { byMode: [], byClass: [] }, winRateByRR: dash.analytics?.winRateByRR || [] });
 });
 
+// Real price series for a coin chart — asset_history candles preferred,
+// snapshot_coins as fallback (and the only source for sub-hour timeframes).
+router.get('/chart/:symbol', async (req, res) => {
+  const sym = req.params.symbol;
+  const tf = req.query.tf || '1h';
+  const CANDLE = { '1h': 120, '4h': 120, '1d': 150 };           // tf -> candle count
+  const SNAP_LOOKBACK = { '5m': 6 * 3600e3, '15m': 18 * 3600e3, '30m': 36 * 3600e3 };
+  let series = [], source = 'none';
+  if (store.activeDriver() === 'postgres') {
+    if (CANDLE[tf]) {
+      try {
+        const c = await store.getCandles(sym, tf, CANDLE[tf]);
+        if (c.length) { series = c.map((x) => ({ t: x.ts, price: Number(x.close) })); source = 'asset_history'; }
+      } catch { /* fall through */ }
+    }
+    if (!series.length) {
+      const lookback = SNAP_LOOKBACK[tf] || 24 * 3600e3;
+      try {
+        const path = await store.getPricePath(sym, new Date(Date.now() - lookback).toISOString(), new Date().toISOString());
+        if (path.length) { series = path.map((p) => ({ t: p.at, price: p.price })); source = 'snapshots'; }
+      } catch { /* none */ }
+    }
+  }
+  res.json({ symbol: sym, tf, source, series });
+});
+
 // Trade Replay — full prediction-vs-reality detail for one tracked setup (read-only).
 router.get('/trade/:setupId', async (req, res) => {
   if (store.activeDriver() !== 'postgres') return res.json({ available: false, note: 'Trade replay needs PostgreSQL + Radar Learn history.' });

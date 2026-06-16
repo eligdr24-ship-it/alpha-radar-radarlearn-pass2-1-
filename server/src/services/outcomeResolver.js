@@ -60,8 +60,9 @@ export async function resolveAll() {
 
   for (const s of setups) {
     const created = +new Date(s.created_at);
-    const existing = new Set((await store.getOutcomes(s.setup_id)).map((o) => o.horizon));
-    const labels = [];
+    const priorOutcomes = await store.getOutcomes(s.setup_id);
+    const existing = new Set(priorOutcomes.map((o) => o.horizon));
+    const allLabels = priorOutcomes.map((o) => o.success_label);   // labels across ALL prior horizons
     let invalidated = false, did30d = false;
 
     for (const [hk, hms] of HORIZONS) {
@@ -71,7 +72,7 @@ export async function resolveAll() {
       const oc = computeOutcome(s, path, hk);
       await store.upsertOutcome({ setup_id: s.setup_id, ...oc });
       labeled++;
-      labels.push(oc.success_label);
+      allLabels.push(oc.success_label);
       if (oc.hit_invalidation) invalidated = true;
       if (hk === '30d') did30d = true;
     }
@@ -88,9 +89,26 @@ export async function resolveAll() {
       }
     }
 
-    const finalLabel = bestLabel(labels.length ? labels : ['fail']);
+    // final_label = best outcome reached across EVERY horizon (a target hit before
+    // invalidation within any window is a win, even if a later horizon failed).
+    const finalLabel = bestLabel(allLabels.length ? allLabels : ['fail']);
     if (invalidated) { await store.markSetupResolved(s.setup_id, 'resolved', 'invalidation', finalLabel); resolved++; }
     else if (did30d) { await store.markSetupResolved(s.setup_id, 'resolved', 'horizon-complete', finalLabel); resolved++; }
   }
   return { setups: setups.length, labeled, resolved, expired };
+}
+
+// One-off data fix: recompute setups.final_label from ALL stored outcomes
+// (corrects rows resolved before the cross-run aggregation fix). Read-mostly.
+export async function recomputeFinalLabels() {
+  if (store.activeDriver() !== 'postgres') return { skipped: true, reason: 'not-postgres' };
+  const setups = await store.listSetups({ status: 'resolved', limit: 100000 });
+  let fixed = 0;
+  for (const s of setups) {
+    const ocs = await store.getOutcomes(s.setup_id);
+    if (!ocs.length) continue;
+    const fl = bestLabel(ocs.map((o) => o.success_label));
+    if (fl !== s.final_label) { await store.updateSetup(s.setup_id, { final_label: fl }); fixed++; }
+  }
+  return { setups: setups.length, fixed };
 }

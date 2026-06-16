@@ -30,6 +30,59 @@ function Ticker({ops}){
 }
 
 /* ===== Priority 1: Selected Coin Hero ===== */
+const CHART_TFS=[['5m','5M'],['15m','15M'],['30m','30M'],['1h','1H'],['4h','4H'],['1d','1D']];
+function HeroChart({op}){
+  const [tf,setTf]=useState('1h');
+  const [data,setData]=useState(null);
+  const [hover,setHover]=useState(null);
+  useEffect(()=>{ let on=true; setData(null); setHover(null);
+    fetch(`/api/chart/${encodeURIComponent(op.symbol)}?tf=${tf}`).then(r=>r.json()).then(d=>{if(on)setData(d)}).catch(()=>{if(on)setData({series:[],source:'none'})});
+    return()=>{on=false}; },[op.symbol,tf]);
+  const t=op.targets||{}, entry=op.price, zone=Array.isArray(t.buyZone)?t.buyZone:null;
+  const series=data?.series||[];
+  const W=720,H=300,PADX=8,RPAD=46,PADT=14,PADB=22;
+  const tfBar=<div className="chTfBar">{CHART_TFS.map(([v,l])=><button key={v} className={tf===v?'active':''} onClick={()=>setTf(v)}>{l}</button>)}</div>;
+  const header=<div className="chHead"><h3>📈 Price Chart{data&&data.source&&data.source!=='none'?<small className="chSrc">{data.source==='asset_history'?'candles':'snapshots'}</small>:''}</h3>{op.setupId&&<a className="replayBtn" href={`/trade/${op.setupId}`}>Open Full Trade Replay →</a>}</div>;
+  if(!data) return <div className="heroChart">{header}{tfBar}<div className="chLoading">Loading chart…</div></div>;
+  if(!series.length) return <div className="heroChart">{header}{tfBar}<div className="chartEmpty">Chart history not available yet. Radar Learn is still collecting price data.</div></div>;
+  const prices=series.map(p=>p.price);
+  const levels=[entry,t.target1,t.target2,t.stretchTarget,t.invalidation,zone&&zone[0],zone&&zone[1]].filter(x=>x!=null&&isFinite(x));
+  const lo=Math.min(...prices,...levels), hi=Math.max(...prices,...levels);
+  const pad=(hi-lo)*0.08||Math.abs(hi*0.02)||1, ymin=lo-pad, ymax=hi+pad, n=series.length;
+  const X=i=>PADX+(n<=1?0:(i/(n-1))*(W-PADX-RPAD));
+  const Y=v=>PADT+(1-(v-ymin)/(ymax-ymin))*(H-PADT-PADB);
+  const pts=series.map((p,i)=>`${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
+  const line=(v,cls,label)=>v==null||!isFinite(v)?null:<g key={label+v}><line x1={PADX} x2={W-RPAD} y1={Y(v)} y2={Y(v)} className={"lvlLine "+cls}/><text x={W-RPAD+3} y={Y(v)+3} className={"lvlLabel "+cls}>{label}</text></g>;
+  const hi_idx=hover?hover.index:null, hp=hi_idx!=null?series[hi_idx]:null;
+  const pctFromEntry=hp&&entry?((hp.price-entry)/entry*100):null;
+  const leftPct=hi_idx!=null?(X(hi_idx)/W*100):0;
+  const onMove=(clientX,target)=>{const r=target.getBoundingClientRect();const fx=Math.max(0,Math.min(1,(clientX-r.left)/r.width));setHover({index:Math.round(fx*(n-1))});};
+  return <div className="heroChart">
+    {header}{tfBar}
+    <div className="chWrap" onMouseLeave={()=>setHover(null)}
+      onMouseMove={e=>onMove(e.clientX,e.currentTarget)}
+      onTouchMove={e=>onMove(e.touches[0].clientX,e.currentTarget)} onTouchEnd={()=>setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="heroChartSvg" preserveAspectRatio="xMidYMid meet">
+        {zone&&<rect x={PADX} y={Y(Math.max(zone[0],zone[1]))} width={W-PADX-RPAD} height={Math.max(2,Math.abs(Y(zone[0])-Y(zone[1])))} className="zoneBand"/>}
+        {line(t.target1,'t','T1')}{line(t.target2,'t','T2')}{line(t.stretchTarget,'t','Stretch')}
+        {line(t.invalidation,'x','Stop')}{line(entry,'cur','Price')}
+        <polyline points={pts} className="pricePath"/>
+        <line x1={X(n-1)} x2={X(n-1)} y1={PADT} y2={H-PADB} className="sigMarker"/>
+        <circle cx={X(n-1)} cy={Y(series[n-1].price)} r="4" className="outcomePt"/>
+        {hp&&<line x1={X(hi_idx)} x2={X(hi_idx)} y1={PADT} y2={H-PADB} className="hoverLine"/>}
+        {hp&&<circle cx={X(hi_idx)} cy={Y(hp.price)} r="3.5" className="hoverPt"/>}
+      </svg>
+      {hp&&<div className="chTip" style={{left:`${Math.max(2,Math.min(82,leftPct))}%`}}>
+        <b>{fmtP(hp.price)}</b>
+        <span>{new Date(hp.t).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+        {pctFromEntry!=null&&<em className={pctFromEntry>=0?'green':'red'}>{(pctFromEntry>=0?'+':'')+pctFromEntry.toFixed(2)}% from price</em>}
+      </div>}
+    </div>
+    <div className="chartLegend">
+      <span className="lg zone">Buy/Sell Zone</span><span className="lg t">Targets (T1/T2/Stretch)</span><span className="lg x">Stop</span><span className="lg cur">Current Price</span><span className="lg sig">Signal</span>
+    </div>
+  </div>;
+}
 function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
   if(!op) return null;
   return <section className="selHero card">
@@ -72,6 +125,7 @@ function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
       <div className="lvl"><span>Stretch Target</span><b>{op.display.stretch}</b><em className="green">{op.display.stretchMove}</em></div>
       <div className="lvl danger"><span>Stop / Invalidation</span><b>{op.display.invalidation}</b><em className="red">{op.display.riskMove}</em></div>
     </div>
+    <HeroChart op={op}/>
     <div className="selWhy">
       <h3>Why This Trade{op.warming&&<span className="warmBadge">warming up</span>}</h3>
       {Array.isArray(op.why)&&op.why.length
@@ -431,8 +485,13 @@ function TradeDetail({setupId}){
   const back=<a className="back" href="/performance">‹ Back</a>;
   if(!d.available) return <div className="tradePage"><header className="statusHead">{back}<h1>🎬 Trade Replay</h1></header><div className="card emptyPerf"><p className="muted2">{d.note||d.error||'Trade replay not available.'}</p></div></div>;
   const s=d.setup, isLong=s.direction==='LONG', tl=d.timeline||{};
-  const ocs=d.outcomes||[]; const oc=ocs.find(o=>o.horizon==='24h')||ocs[ocs.length-1]||null;
-  const result = s.status==='active'?'Open':s.status==='expired'?'Expired':(['target1','target2','stretch'].includes(s.final_label)?'Win':'Loss');
+  const RANK={fail:0,invalidated:0,target1:1,target2:2,stretch:3};
+  const ocs=d.outcomes||[];
+  // headline outcome = the best result the trade ever reached (a target hit before
+  // invalidation in any window is a win), so Reality and System Learning agree.
+  const oc=ocs.length?ocs.slice().sort((a,b)=>(RANK[b.success_label]||0)-(RANK[a.success_label]||0)||(new Date(b.resolved_at||0)-new Date(a.resolved_at||0)))[0]:null;
+  const hadWin=!!oc&&['target1','target2','stretch'].includes(oc.success_label);
+  const result = hadWin?'Win':s.status==='active'?'Open':s.status==='expired'?'Expired':'Loss';
   const created=+new Date(s.created_at);
   const t1pct = s.entry_price?((isLong?(s.target1-s.entry_price):(s.entry_price-s.target1))/s.entry_price*100):null;
   const finalRet = oc?.final_return!=null?Number(oc.final_return)*100:null;
@@ -517,7 +576,7 @@ function TradeDetail({setupId}){
           <Row label="Win rate" value={d.learning.winRate!=null?d.learning.winRate+'%':'—'} tone={(d.learning.winRate||0)>=50?'green':'red'}/>
           <Row label="Average return" value={d.learning.avgReturn!=null?((d.learning.avgReturn*100>=0?'+':'')+(d.learning.avgReturn*100).toFixed(1)+'%'):'—'}/>
           <Row label="This result" value={result} tone={result==='Win'?'green':result==='Loss'?'red':''}/>
-          <p className="modelNote">{result==='Win'?'Reinforces confidence for this pattern slightly.':result==='Loss'?'Lowers confidence for this pattern slightly.':'No confidence change until resolved.'}</p>
+          <p className="modelNote">{result==='Win'?(finalRet!=null&&t1pct!=null&&finalRet>t1pct?'This trade outperformed expectations — slightly increases confidence for similar patterns.':'Target reached — slightly increases confidence for similar patterns.'):result==='Loss'?'Lowers confidence for this pattern slightly.':'No confidence change until the trade resolves.'}</p>
         </>:<p className="muted2">Not enough similar resolved setups yet to compare.</p>}
       </div>
     </div>

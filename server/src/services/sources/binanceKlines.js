@@ -5,6 +5,9 @@ import { createLimiter } from '../../lib/limiter.js';
 
 const limiter = createLimiter({ minGapMs: 500, maxConcurrent: 2 });
 const INTERVAL = { '1d': '1d', '4h': '4h', '1h': '1h' };
+// api.binance.com returns HTTP 451 from datacenter IPs (Render). data-api.binance.vision
+// serves the same public market data without geo-blocking. Override with BINANCE_BASE_URL.
+const BINANCE_BASE = (process.env.BINANCE_BASE_URL || 'https://data-api.binance.vision').replace(/\/$/, '');
 
 export function parseKlines(raw) {
   if (!Array.isArray(raw)) return [];
@@ -18,9 +21,14 @@ export function parseKlines(raw) {
 export async function backfillBinance({ symbol, timeframe = '1d', sinceMs = 0, fetchImpl, maxPages = 200 }) {
   const interval = INTERVAL[timeframe] || '1d';
   const pair = `${symbol.toUpperCase()}USDT`;
+  const host = BINANCE_BASE.replace(/^https?:\/\//, '');
   const fetchPage = fetchImpl || (async (startTime) => {
-    const url = `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=${interval}&startTime=${startTime}&limit=1000`;
-    return parseKlines(await fetchJson(url, { limiter, retries: 2, timeoutMs: 12000 }));
+    const url = `${BINANCE_BASE}/api/v3/klines?symbol=${pair}&interval=${interval}&startTime=${startTime}&limit=1000`;
+    try {
+      return parseKlines(await fetchJson(url, { limiter, retries: 2, timeoutMs: 12000 }));
+    } catch (e) {
+      throw new Error(`binance(${host}) ${pair} ${interval}: ${e.message}`);
+    }
   });
 
   const all = [];

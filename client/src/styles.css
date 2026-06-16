@@ -405,3 +405,31 @@ table{min-width:0}.perfTable{min-width:620px}
 main{min-width:0;padding-bottom:60px}
 .app{overflow-x:hidden}
 @media (max-width:1280px) and (min-width:1051px){ header{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))} }
+
+/* ===== Selected Coin Hero — live price chart ===== */
+.heroChart{margin-top:14px;background:#0a1018;border:1px solid var(--line);border-radius:12px;padding:12px;max-width:100%}
+.chHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.chHead h3{margin:0;font-size:14px;display:flex;align-items:center;gap:8px}
+.chSrc{font-size:10px;color:var(--muted);background:#10203a;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-weight:600}
+.chHead .replayBtn{margin-left:auto}
+.chTfBar{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.chTfBar button{background:#0b1320;border:1px solid var(--line);color:var(--muted);border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}
+.chTfBar button.active{background:#16345a;border-color:#3a72c8;color:#dbe8ff}
+.chWrap{position:relative;width:100%;aspect-ratio:12/5;background:#070d15;border:1px solid var(--line);border-radius:10px;overflow:hidden;touch-action:pan-y}
+.heroChartSvg{width:100%;height:100%;display:block}
+.heroChartSvg .pricePath{fill:none;stroke:#26d6ff;stroke-width:2}
+.heroChartSvg .lvlLine{stroke-width:1;stroke-dasharray:4 4}
+.heroChartSvg .lvlLine.t{stroke:#27f765}.heroChartSvg .lvlLine.x{stroke:#ff3b3b}.heroChartSvg .lvlLine.cur{stroke:#ffd23f;stroke-dasharray:2 3}
+.heroChartSvg .lvlLabel{font-size:10px;fill:var(--muted)}
+.heroChartSvg .lvlLabel.t{fill:#27f765}.heroChartSvg .lvlLabel.x{fill:#ff7777}.heroChartSvg .lvlLabel.cur{fill:#ffd23f}
+.heroChartSvg .zoneBand{fill:rgba(47,95,168,.20)}
+.heroChartSvg .sigMarker{stroke:#7d35ff;stroke-width:1;stroke-dasharray:3 3}
+.heroChartSvg .outcomePt{fill:#fff;stroke:#26d6ff;stroke-width:2}
+.heroChartSvg .hoverLine{stroke:rgba(255,255,255,.4);stroke-width:1}
+.heroChartSvg .hoverPt{fill:#fff;stroke:#26d6ff;stroke-width:1.5}
+.chTip{position:absolute;top:8px;transform:translateX(-50%);background:rgba(10,18,30,.96);border:1px solid var(--line);border-radius:8px;padding:6px 9px;pointer-events:none;white-space:nowrap;z-index:3}
+.chTip b{display:block;font-size:13px}.chTip span{display:block;color:var(--muted);font-size:10px}.chTip em{font-style:normal;font-size:11px;font-weight:700}
+.chLoading,.heroChart .chartEmpty{padding:26px;text-align:center;color:var(--muted)}
+.heroChart .chartLegend{margin-top:9px}
+.chartLegend .lg.zone::before{background:rgba(47,95,168,.7)}
+.chartLegend .lg.cur::before{background:#ffd23f}

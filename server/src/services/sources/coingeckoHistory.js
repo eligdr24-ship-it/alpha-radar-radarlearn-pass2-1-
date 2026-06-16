@@ -18,9 +18,15 @@ export function parseMarketChart(data) {
 export async function backfillCoinGecko({ symbol, id, fetchImpl }) {
   const coinId = id || CG_IDS[symbol.toUpperCase()];
   if (!coinId) return { candles: [], notes: 'no-coingecko-id' };
+  const base = (process.env.COINGECKO_BASE_URL || 'https://api.coingecko.com').replace(/\/$/, '');
+  const headers = process.env.COINGECKO_API_KEY ? { 'x-cg-demo-api-key': process.env.COINGECKO_API_KEY } : {};
   const fetcher = fetchImpl || (async () => {
-    const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max&interval=daily`;
-    return parseMarketChart(await fetchJson(url, { limiter, retries: 2, timeoutMs: 15000 }));
+    const url = `${base}/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=max&interval=daily`;
+    try {
+      return parseMarketChart(await fetchJson(url, { limiter, retries: 2, timeoutMs: 15000, headers }));
+    } catch (e) {
+      throw new Error(`coingecko(${base.replace(/^https?:\/\//, '')}) ${coinId}: ${e.message}`);
+    }
   });
   return { candles: await fetcher(), notes: 'ohlc_partial' };
 }
