@@ -139,12 +139,14 @@ router.get('/trade/:setupId', async (req, res) => {
   let similar = [];
   try { similar = await store.learnSimilar(req.params.setupId, 30); } catch { similar = []; }
   const wins = similar.filter((x) => ['target1', 'target2', 'stretch'].includes(x.final_label)).length;
-  let avgRet = { avg: null, n: 0 };
+  let avgRet = { avg: null, n: 0 }, avgRr = { avg: null, n: 0 };
   try { avgRet = await store.avgReturnForSetups(similar.map((x) => x.setup_id), '24h'); } catch { /* ignore */ }
+  try { avgRr = await store.avgRrForSetups(similar.map((x) => x.setup_id)); } catch { /* ignore */ }
   const learning = {
     n: similar.length,
     winRate: similar.length ? Math.round((wins / similar.length) * 100) : null,
     avgReturn: avgRet.avg,
+    avgRr: avgRr.avg,
     items: similar.slice(0, 8),
   };
 

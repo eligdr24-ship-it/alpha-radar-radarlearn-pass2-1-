@@ -482,3 +482,22 @@ main{min-width:0;padding-bottom:60px}
   .selRight{order:2}
   .chartPreview{position:static}
 }
+
+/* ===== Trade Replay: live chart head + split learning card + markers ===== */
+.tdChartHead{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.tdChartHead h3{margin:0}
+.tdChartHead .px{margin-left:auto;font-size:14px;color:#cfe0ff}
+.learnSplit{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.learnBlock h4{margin:0 0 6px;font-size:13px;color:#cfd8e8;letter-spacing:.3px}
+.learnBlock{background:#0a1018;border:1px solid var(--line);border-radius:10px;padding:10px}
+.learnNote{display:block;margin-top:6px;color:var(--muted);font-size:11px;line-height:1.4}
+@media (max-width:760px){.learnSplit{grid-template-columns:1fr}}
+/* replay chart current-price + resolved markers */
+.replayChart .lvlLine.cur{stroke:#ffd23f;stroke-dasharray:2 3}
+.replayChart .lvlLabel.cur{fill:#ffd23f}
+.replayChart .curPt{fill:#ffd23f;stroke:#1a1206;stroke-width:1.5}
+.replayChart .curText{fill:#ffd23f;font-size:10px;font-weight:700}
+.replayChart .resolvedPt{fill:none;stroke:#26d6ff;stroke-width:2.5}
+.replayChart .resolvedText{fill:#9fe4ff;font-size:10px;font-weight:700}
+.chartLegend .lg.cur:before{background:#ffd23f}
+.chartLegend .lg.resolved:before{background:transparent;box-shadow:inset 0 0 0 2px #26d6ff}

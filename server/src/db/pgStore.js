@@ -375,6 +375,14 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       const r = await q(`SELECT avg(final_return) AS a, count(*) AS n FROM outcomes WHERE horizon = $1 AND setup_id IN (${ph})`, [horizon, ...ids]);
       return { avg: r.rows[0].a == null ? null : Number(r.rows[0].a), n: Number(r.rows[0].n) };
     },
+    async avgRrForSetups(ids) {
+      if (!ids || !ids.length) return { avg: null, n: 0 };
+      const ph = ids.map((_, i) => `$${i + 1}`).join(',');
+      const reward = `(CASE WHEN target1 - entry_price >= 0 THEN target1 - entry_price ELSE entry_price - target1 END)`;
+      const risk = `(CASE WHEN entry_price - invalidation >= 0 THEN entry_price - invalidation ELSE invalidation - entry_price END)`;
+      const r = await q(`SELECT avg(CASE WHEN ${risk} <= 0 THEN NULL ELSE ${reward} / ${risk} END) AS a, count(*) AS n FROM setups WHERE setup_id IN (${ph})`, ids);
+      return { avg: r.rows[0].a == null ? null : Number(r.rows[0].a), n: Number(r.rows[0].n) };
+    },
     async getPerformance({ horizon } = {}) {
       const hf = horizon && horizon !== 'all';
       const P = hf ? [horizon] : [];

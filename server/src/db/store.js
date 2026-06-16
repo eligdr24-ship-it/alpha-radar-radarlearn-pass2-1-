@@ -78,6 +78,7 @@ export const learnRRBuckets = proxy('learnRRBuckets');
 export const learnWinRateByType = proxy('learnWinRateByType');
 export const getPerformance = proxy('getPerformance');
 export const avgReturnForSetups = proxy('avgReturnForSetups');
+export const avgRrForSetups = proxy('avgRrForSetups');
 export const getRadarLearnStats = proxy('getRadarLearnStats');
 export const getBackfillStats = proxy('getBackfillStats');
 export const getCoinHistories = proxy('getCoinHistories');

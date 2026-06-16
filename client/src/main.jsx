@@ -34,6 +34,7 @@ const CHART_TFS=[['5m','5M'],['15m','15M'],['30m','30M'],['1h','1H'],['4h','4H']
 function useChart(symbol, tf, live){
   const [data,setData]=useState(null);
   useEffect(()=>{ let on=true; setData(null);
+    if(!symbol) return ()=>{on=false};
     const load=()=>fetch(`/api/chart/${encodeURIComponent(symbol)}?tf=${tf}`).then(r=>r.json()).then(d=>{if(on)setData(d)}).catch(()=>{if(on)setData({series:[],source:'none'})});
     load();
     const id=live?setInterval(load,30000):null;   // live refresh
@@ -496,53 +497,87 @@ function SystemPerformance(){
 /* ===== Trade Replay / Trade Detail ===== */
 function durStr(ms){ if(ms==null||ms<0) return null; const m=Math.round(ms/60000); if(m<60) return m+'m'; const h=Math.floor(m/60); return `${h}h ${m%60}m`; }
 function tstamp(t){ if(!t) return 'Not reached'; const d=new Date(t); return d.toLocaleString(); }
-function ReplayChart({path,s}){
-  if(!path||path.length<2) return <div className="chartEmpty">Chart history not available yet. Radar Learn is still collecting data.</div>;
+// Single source of truth for the trade's result, derived from resolved outcomes.
+// success_label already encodes target-before-invalidation ordering per horizon, so the
+// best label across horizons is the true highest target reached (a raw hit_target flag can
+// coexist with an earlier stop-out). Used by EVERY Trade Replay section so none can disagree.
+const LABEL_RANK={fail:0,invalidated:0,target1:1,target2:2,stretch:3};
+function deriveResult(outcomes,status){
+  const ocs=outcomes||[];
+  const bestRank=ocs.reduce((m,o)=>Math.max(m,LABEL_RANK[o.success_label]??0),0);
+  const reachedT1=bestRank>=1, reachedT2=bestRank>=2, reachedStretch=bestRank>=3;
+  const highestTarget=reachedStretch?'Stretch':reachedT2?'Target 2':reachedT1?'Target 1':'None';
+  const hadWin=bestRank>=1, hitInv=ocs.some(o=>o.hit_invalidation);
+  let result;
+  if(hadWin) result='Win';
+  else if(status==='active') result='Open';
+  else if(status==='expired') result='Expired';
+  else if(ocs.length) result='Loss';
+  else result='Open';
+  return { result, highestTarget, reachedT1, reachedT2, reachedStretch, hadWin, hitInv, bestRank };
+}
+function ReplayChart({path,s,livePrice,liveAt,outcome}){
+  let p=path||[];
+  // append the live point so the path extends to "now" (even after resolution)
+  if(livePrice!=null&&liveAt&&(!p.length||+new Date(liveAt)>+new Date(p[p.length-1].at))) p=[...p,{at:liveAt,price:livePrice}];
+  if(p.length<2) return <div className="chartEmpty">Chart history not available yet. Radar Learn is still collecting data.</div>;
   const W=720,H=300,PADX=56,PADT=18,PADB=24;
-  const prices=path.map(p=>p.price);
-  const levels=[s.entry_price,s.target1,s.target2,s.stretch_target,s.invalidation,s.buy_zone_low,s.buy_zone_high].filter(x=>x!=null);
+  const cur=livePrice!=null?livePrice:p[p.length-1].price;
+  const prices=p.map(x=>x.price);
+  const levels=[s.entry_price,s.target1,s.target2,s.stretch_target,s.invalidation,s.buy_zone_low,s.buy_zone_high,cur].filter(x=>x!=null);
   const lo=Math.min(...prices,...levels), hi=Math.max(...prices,...levels);
   const pad=(hi-lo)*0.08||Math.abs(hi*0.02)||1, ymin=lo-pad, ymax=hi+pad;
-  const X=i=>PADX+(i/(path.length-1))*(W-PADX-14);
+  const X=i=>PADX+(i/(p.length-1))*(W-PADX-14);
   const Y=v=>PADT+(1-(v-ymin)/(ymax-ymin))*(H-PADT-PADB);
-  const pts=path.map((p,i)=>`${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
+  const pts=p.map((x,i)=>`${X(i).toFixed(1)},${Y(x.price).toFixed(1)}`).join(' ');
   const line=(v,cls,label)=>v==null?null:<g key={label}><line x1={PADX} x2={W-14} y1={Y(v)} y2={Y(v)} className={"lvlLine "+cls}/><text x={PADX-6} y={Y(v)+3} className={"lvlLabel "+cls} textAnchor="end">{label}</text></g>;
-  const created=+new Date(s.created_at); let sig=path.findIndex(p=>+new Date(p.at)>=created); if(sig<0) sig=0;
+  const created=+new Date(s.created_at); let sig=p.findIndex(x=>+new Date(x.at)>=created); if(sig<0) sig=0;
   const zoneTop=s.buy_zone_low!=null?Math.max(s.buy_zone_low,s.buy_zone_high):null;
+  // resolved outcome point — nearest path index to the resolution time
+  let outIdx=-1; if(outcome&&outcome.at){ const ot=+new Date(outcome.at); let best=Infinity; p.forEach((x,i)=>{const dd=Math.abs(+new Date(x.at)-ot); if(dd<best){best=dd;outIdx=i;}}); }
   return <svg viewBox={`0 0 ${W} ${H}`} className="replayChart" preserveAspectRatio="xMidYMid meet">
     {zoneTop!=null&&<rect x={PADX} y={Y(zoneTop)} width={W-PADX-14} height={Math.max(2,Math.abs(Y(s.buy_zone_low)-Y(s.buy_zone_high)))} className="zoneBand"/>}
     {line(s.target1,'t','T1')}{line(s.target2,'t','T2')}{line(s.stretch_target,'t','Stretch')}
     {line(s.entry_price,'e','Entry')}{line(s.invalidation,'x','Stop')}
+    {line(cur,'cur','Now '+fmtP(cur))}
     <polyline points={pts} className="pricePath"/>
     <line x1={X(sig)} x2={X(sig)} y1={PADT} y2={H-PADB} className="sigMarker"/>
     <text x={X(sig)+4} y={PADT+11} className="sigText">signal</text>
-    <circle cx={X(path.length-1)} cy={Y(path[path.length-1].price)} r="4.5" className="outcomePt"/>
+    {outIdx>=0&&<g><circle cx={X(outIdx)} cy={Y(p[outIdx].price)} r="5.5" className="resolvedPt"/><text x={X(outIdx)+7} y={Y(p[outIdx].price)-7} className="resolvedText">outcome</text></g>}
+    <circle cx={X(p.length-1)} cy={Y(cur)} r="4.5" className="curPt"/>
+    <text x={X(p.length-1)-4} y={Y(cur)-8} className="curText" textAnchor="end">now</text>
   </svg>;
 }
 function TradeDetail({setupId}){
   const [d,setD]=useState(null); const [copied,setCopied]=useState(false);
   useEffect(()=>{ let on=true; fetch(`/api/trade/${encodeURIComponent(setupId)}`).then(r=>r.json()).then(x=>{if(on)setD(x)}).catch(()=>{if(on)setD({available:false,error:'Failed to load trade.'})}); return()=>{on=false}; },[setupId]);
+  const live=useChart(d&&d.available&&d.setup?d.setup.symbol:null,'5m',true);  // unconditional hook
   if(!d) return <div className="loading">Loading trade…</div>;
   const back=<a className="back" href="/performance">‹ Back</a>;
   if(!d.available) return <div className="tradePage"><header className="statusHead">{back}<h1>🎬 Trade Replay</h1></header><div className="card emptyPerf"><p className="muted2">{d.note||d.error||'Trade replay not available.'}</p></div></div>;
   const s=d.setup, isLong=s.direction==='LONG', tl=d.timeline||{};
-  const RANK={fail:0,invalidated:0,target1:1,target2:2,stretch:3};
   const ocs=d.outcomes||[];
-  // headline outcome = the best result the trade ever reached (a target hit before
-  // invalidation in any window is a win), so Reality and System Learning agree.
-  const oc=ocs.length?ocs.slice().sort((a,b)=>(RANK[b.success_label]||0)-(RANK[a.success_label]||0)||(new Date(b.resolved_at||0)-new Date(a.resolved_at||0)))[0]:null;
-  const hadWin=!!oc&&['target1','target2','stretch'].includes(oc.success_label);
-  const result = hadWin?'Win':s.status==='active'?'Open':s.status==='expired'?'Expired':'Loss';
+  const dr=deriveResult(ocs,s.status);             // single source of truth
+  const result=dr.result;
+  // headline outcome = the one carrying the highest target reached (for return/MFE/MAE)
+  const oc=ocs.length?ocs.slice().sort((a,b)=>(LABEL_RANK[b.success_label]-LABEL_RANK[a.success_label])||(new Date(b.resolved_at||0)-new Date(a.resolved_at||0)))[0]:null;
   const created=+new Date(s.created_at);
   const t1pct = s.entry_price?((isLong?(s.target1-s.entry_price):(s.entry_price-s.target1))/s.entry_price*100):null;
   const finalRet = oc?.final_return!=null?Number(oc.final_return)*100:null;
   const mfe = oc?.max_favorable_excursion!=null?Number(oc.max_favorable_excursion)*100:null;
   const mae = oc?.max_adverse_excursion!=null?Number(oc.max_adverse_excursion)*100:null;
   const t1after = tl.target1At?durStr(+new Date(tl.target1At)-created):null;
-  // why won/lost reasons
+  // live current price (from latest stored snapshot/candle) + freshness state
+  const lp=live&&live.series&&live.series.length?live.series[live.series.length-1]:null;
+  const currentPrice=lp?lp.price:null, liveAt=lp?lp.t:null;
+  const ageMin=liveAt?(Date.now()-+new Date(liveAt))/60000:null;
+  const liveState=currentPrice==null?{label:'MOCK',cls:'mock'}:ageMin<10?{label:'LIVE',cls:'live'}:ageMin<180?{label:'STALE',cls:'stale'}:{label:'MOCK',cls:'mock'};
+  // reconcile a target's "reached" flag (authoritative) with its path-walk time
+  const tCell=(reached,at)=> reached?(at?tstamp(at):'Reached'):'Not reached';
+  // why won/lost reasons — driven by the derived highest target, never final_label
   const reasons=[];
-  if(result==='Win'){ if(s.final_label==='stretch') reasons.push('Reached the stretch target'); else if(s.final_label==='target2') reasons.push('Reached Target 2'); else reasons.push('Reached Target 1'); if(mae!=null&&mae>0) reasons.push(`Held the stop (worst drawdown ${mae.toFixed(1)}%)`); }
-  else if(result==='Loss'){ if(oc?.hit_invalidation) reasons.push('Hit invalidation / stop'); if(!oc?.hit_target1) reasons.push('Failed to reach Target 1'); if(mfe!=null&&mfe>1&&oc?.hit_invalidation) reasons.push('Price reversed after an early favorable move'); reasons.push('Possible regime change / volume fade (not separately tracked)'); }
+  if(result==='Win'){ reasons.push(`Reached ${dr.highestTarget}`); if(mae!=null) reasons.push(`Worst drawdown along the way: ${Math.abs(mae).toFixed(1)}%`); if(finalRet!=null) reasons.push(`Final return ${(finalRet>=0?'+':'')+finalRet.toFixed(1)}% at ${oc?.horizon||'—'}`); }
+  else if(result==='Loss'){ if(dr.hitInv) reasons.push('Hit invalidation / stop before any target'); else reasons.push('Failed to reach Target 1 before resolving'); if(mfe!=null&&mfe>1) reasons.push(`Moved +${mfe.toFixed(1)}% in favor, then reversed`); }
   else if(result==='Expired'){ reasons.push('Price never entered the buy/sell zone before expiry'); }
   const copy=()=>{
     const L=[`ALPHA RADAR — TRADE REPLAY`,`${s.symbol} ${s.direction} (${s.mode})  [${result}]`,`Setup: ${s.setup_type||'—'} · Regime: ${s.market_regime||'—'} · Narrative: ${s.narrative||'—'}`,
@@ -575,16 +610,17 @@ function TradeDetail({setupId}){
       <div className="card tdCard"><h3>2 · Timeline</h3>
         <Row label="System suggested trade" value={tstamp(tl.signalAt)}/>
         <Row label="Entered buy/sell zone" value={tstamp(tl.entryAt)}/>
-        <Row label="Target 1 hit" value={tstamp(tl.target1At)}/>
-        <Row label="Target 2 hit" value={tstamp(tl.target2At)}/>
-        <Row label="Stretch hit" value={tstamp(tl.stretchAt)}/>
-        <Row label="Invalidation hit" value={tstamp(tl.invalidationAt)} tone={tl.invalidationAt?'red':''}/>
+        <Row label="Target 1 hit" value={tCell(dr.reachedT1,tl.target1At)} tone={dr.reachedT1?'green':''}/>
+        <Row label="Target 2 hit" value={tCell(dr.reachedT2,tl.target2At)} tone={dr.reachedT2?'green':''}/>
+        <Row label="Stretch hit" value={tCell(dr.reachedStretch,tl.stretchAt)} tone={dr.reachedStretch?'green':''}/>
+        <Row label="Invalidation hit" value={tCell(dr.hitInv,tl.invalidationAt)} tone={dr.hitInv?'red':''}/>
         <Row label="Outcome resolved" value={tstamp(tl.resolvedAt)}/>
       </div>
     </div>
 
-    <div className="card"><h3>3 · Price Chart</h3><ReplayChart path={d.path} s={s}/>
-      <div className="chartLegend"><span className="lg e">Entry</span><span className="lg t">Targets</span><span className="lg x">Stop</span><span className="lg sig">Signal</span><span className="lg path">Price path</span></div>
+    <div className="card"><div className="tdChartHead"><h3>3 · Price Chart</h3><span className={"srcState "+liveState.cls}>{liveState.label}</span>{currentPrice!=null&&<b className="px">Current: {fmtP(currentPrice)}</b>}</div>
+      <ReplayChart path={d.path} s={s} livePrice={currentPrice} liveAt={liveAt} outcome={oc?{at:oc.resolved_at||tl.resolvedAt,price:oc.price_at_horizon}:null}/>
+      <div className="chartLegend"><span className="lg e">Entry</span><span className="lg t">Targets</span><span className="lg x">Stop</span><span className="lg sig">Signal</span><span className="lg cur">Current price</span><span className="lg resolved">Resolved outcome</span></div>
     </div>
 
     <div className="tdGrid">
@@ -597,12 +633,16 @@ function TradeDetail({setupId}){
       </div>
       <div className="card tdCard real"><h3>Reality</h3>
         {d.path&&d.path.length?<>
-          <Row label="Entered zone at" value={tl.entryAt?fmtP((d.path.find(p=>p.at===tl.entryAt)||{}).price)||'yes':'Not reached'}/>
-          <Row label="Target 1" value={tl.target1At?`Reached after ${t1after}`:'Not reached'} tone={tl.target1At?'green':'red'}/>
+          <Row label="Entered zone at" value={tl.entryAt?tstamp(tl.entryAt):'Not reached'}/>
+          <Row label="Highest target reached" value={dr.highestTarget} tone={dr.hadWin?'green':''}/>
+          <Row label="Target 1 time" value={tCell(dr.reachedT1,tl.target1At)} tone={dr.reachedT1?'green':''}/>
+          <Row label="Target 2 time" value={tCell(dr.reachedT2,tl.target2At)} tone={dr.reachedT2?'green':''}/>
+          <Row label="Stretch time" value={tCell(dr.reachedStretch,tl.stretchAt)} tone={dr.reachedStretch?'green':''}/>
+          <Row label="Invalidation time" value={tCell(dr.hitInv,tl.invalidationAt)} tone={dr.hitInv?'red':''}/>
           <Row label="Max favorable move" value={mfe!=null?'+'+mfe.toFixed(1)+'%':'—'} tone="green"/>
           <Row label="Max adverse move" value={mae!=null?'-'+Math.abs(mae).toFixed(1)+'%':'—'} tone="red"/>
           <Row label={`Final return (${oc?.horizon||'—'})`} value={finalRet!=null?(finalRet>=0?'+':'')+finalRet.toFixed(1)+'%':'Open'} tone={finalRet!=null?(finalRet>=0?'green':'red'):''}/>
-          {t1pct!=null&&finalRet!=null&&<div className="diffLine"><b>Difference:</b> expected {(t1pct>=0?'+':'')+t1pct.toFixed(0)}%, actual {(finalRet>=0?'+':'')+finalRet.toFixed(0)}%</div>}
+          {t1pct!=null&&finalRet!=null&&<div className="diffLine"><b>Difference:</b> expected {(t1pct>=0?'+':'')+t1pct.toFixed(0)}% to T1, actual {(finalRet>=0?'+':'')+finalRet.toFixed(0)}%</div>}
         </>:<p className="muted2">{s.status==='active'?'Trade still open. Outcome not resolved yet.':'Chart history not available yet. Radar Learn is still collecting data.'}</p>}
       </div>
     </div>
@@ -612,13 +652,35 @@ function TradeDetail({setupId}){
         {reasons.length?<ul className="whyList">{reasons.map((r,i)=><li key={i}>{r}</li>)}</ul>:<p className="muted2">Trade still open — outcome not resolved yet.</p>}
       </div>
       <div className="card tdCard"><h3>6 · System Learning</h3>
-        {d.learning&&d.learning.n?<>
-          <Row label="Similar setups" value={d.learning.n}/>
-          <Row label="Win rate" value={d.learning.winRate!=null?d.learning.winRate+'%':'—'} tone={(d.learning.winRate||0)>=50?'green':'red'}/>
-          <Row label="Average return" value={d.learning.avgReturn!=null?((d.learning.avgReturn*100>=0?'+':'')+(d.learning.avgReturn*100).toFixed(1)+'%'):'—'}/>
-          <Row label="This result" value={result} tone={result==='Win'?'green':result==='Loss'?'red':''}/>
-          <p className="modelNote">{result==='Win'?(finalRet!=null&&t1pct!=null&&finalRet>t1pct?'This trade outperformed expectations — slightly increases confidence for similar patterns.':'Target reached — slightly increases confidence for similar patterns.'):result==='Loss'?'Lowers confidence for this pattern slightly.':'No confidence change until the trade resolves.'}</p>
-        </>:<p className="muted2">Not enough similar resolved setups yet to compare.</p>}
+        <div className="learnSplit">
+          <div className="learnBlock">
+            <h4>A · Current Trade Result</h4>
+            <Row label="This trade" value={result} tone={result==='Win'?'green':result==='Loss'?'red':''}/>
+            <Row label="Highest target reached" value={dr.highestTarget} tone={dr.hadWin?'green':''}/>
+            <Row label="Final return" value={finalRet!=null?(finalRet>=0?'+':'')+finalRet.toFixed(1)+'%':'Open'} tone={finalRet!=null?(finalRet>=0?'green':'red'):''}/>
+            <Row label="Max favorable move" value={mfe!=null?'+'+mfe.toFixed(1)+'%':'—'} tone="green"/>
+            <Row label="Max adverse move" value={mae!=null?'-'+Math.abs(mae).toFixed(1)+'%':'—'} tone="red"/>
+          </div>
+          <div className="learnBlock">
+            <h4>B · Similar Historical Setups</h4>
+            {d.learning&&d.learning.n?<>
+              <Row label="Similar setups" value={d.learning.n}/>
+              <Row label="Historical win rate" value={d.learning.winRate!=null?d.learning.winRate+'%':'—'} tone={(d.learning.winRate||0)>=50?'green':'red'}/>
+              <Row label="Historical avg return" value={d.learning.avgReturn!=null?((d.learning.avgReturn*100>=0?'+':'')+(d.learning.avgReturn*100).toFixed(1)+'%'):'—'} tone={(d.learning.avgReturn||0)>=0?'green':'red'}/>
+              <Row label="Historical avg RR" value={d.learning.avgRr!=null?d.learning.avgRr.toFixed(2)+'×':'—'}/>
+              <small className="learnNote">Resolved setups only · same mode + history class · current trade excluded.</small>
+            </>:<p className="muted2">Not enough similar resolved setups yet to compare.</p>}
+          </div>
+        </div>
+        <p className="modelNote">{
+          result==='Win'
+            ? (d.learning&&d.learning.n&&(d.learning.winRate||0)<50
+                ? 'This trade outperformed weak historical expectations for this pattern — it is a win, not a loss. The historical stats above describe similar past setups, not this trade.'
+                : 'Target reached — consistent with how similar setups have performed.')
+            : result==='Loss'
+              ? 'This trade did not reach a target. '+(d.learning&&d.learning.n?(d.learning.winRate>=50?'Similar setups have historically fared better.':'Similar setups have also struggled historically.'):'')
+              : 'No confidence change until the trade resolves.'
+        }</p>
       </div>
     </div>
     <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/performance">📈<small>Performance</small></a><a href="/status">⚙<small>Status</small></a><a href="/mobile">📱<small>Mobile</small></a></nav>
