@@ -80,6 +80,51 @@ router.get('/analytics/rr', async (req, res) => {
   res.json({ rr: dash.analytics?.rr || { byMode: [], byClass: [] }, winRateByRR: dash.analytics?.winRateByRR || [] });
 });
 
+// Trade Replay — full prediction-vs-reality detail for one tracked setup (read-only).
+router.get('/trade/:setupId', async (req, res) => {
+  if (store.activeDriver() !== 'postgres') return res.json({ available: false, note: 'Trade replay needs PostgreSQL + Radar Learn history.' });
+  const data = await store.getSetup(req.params.setupId);
+  if (!data || !data.setup) return res.status(404).json({ available: false, error: 'Setup not found' });
+  const s = data.setup;
+  const created = +new Date(s.created_at);
+  const lastOutcome = (data.outcomes || []).reduce((m, o) => Math.max(m, +new Date(o.resolved_at || 0)), 0);
+  const toMs = Math.max(lastOutcome, created + 24 * 3600e3, Date.now() - 1);
+  const fromISO = new Date(created - 2 * 3600e3).toISOString();
+  const toISO = new Date(Math.min(toMs, Date.now())).toISOString();
+  let path = [];
+  try { path = await store.getPricePath(s.symbol, fromISO, toISO); } catch { path = []; }
+
+  // Derive hit timestamps from the snapshot price path (display-time only).
+  const isLong = s.direction === 'LONG';
+  const lo = Math.min(s.buy_zone_low, s.buy_zone_high), hi = Math.max(s.buy_zone_low, s.buy_zone_high);
+  const firstAt = (pred) => { for (const p of path) if (pred(p.price)) return p.at; return null; };
+  const upHit = (lvl) => firstAt((px) => px >= lvl), dnHit = (lvl) => firstAt((px) => px <= lvl);
+  const timeline = {
+    signalAt: s.created_at,
+    entryAt: s.entry_filled_at || firstAt((px) => px >= lo && px <= hi),
+    target1At: s.target1 != null ? (isLong ? upHit(s.target1) : dnHit(s.target1)) : null,
+    target2At: s.target2 != null ? (isLong ? upHit(s.target2) : dnHit(s.target2)) : null,
+    stretchAt: s.stretch_target != null ? (isLong ? upHit(s.stretch_target) : dnHit(s.stretch_target)) : null,
+    invalidationAt: s.invalidation != null ? (isLong ? dnHit(s.invalidation) : upHit(s.invalidation)) : null,
+    resolvedAt: s.resolved_at,
+  };
+
+  // System learning — similar resolved setups.
+  let similar = [];
+  try { similar = await store.learnSimilar(req.params.setupId, 30); } catch { similar = []; }
+  const wins = similar.filter((x) => ['target1', 'target2', 'stretch'].includes(x.final_label)).length;
+  let avgRet = { avg: null, n: 0 };
+  try { avgRet = await store.avgReturnForSetups(similar.map((x) => x.setup_id), '24h'); } catch { /* ignore */ }
+  const learning = {
+    n: similar.length,
+    winRate: similar.length ? Math.round((wins / similar.length) * 100) : null,
+    avgReturn: avgRet.avg,
+    items: similar.slice(0, 8),
+  };
+
+  res.json({ available: true, setup: s, signal_values: data.signal_values || [], outcomes: data.outcomes || [], vector: data.vector || null, path, timeline, learning });
+});
+
 // System Performance — how Radar Learn's own calls are doing, by horizon.
 router.get('/performance', async (req, res) => {
   const horizon = req.query.horizon || 'all';

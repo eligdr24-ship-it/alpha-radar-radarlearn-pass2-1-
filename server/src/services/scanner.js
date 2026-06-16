@@ -225,12 +225,12 @@ export async function getDashboard(mode = 'day') {
   const rrAnalytics = computeRRAnalytics(opp?.byMode);
 
   // Real 24h win-rate + win-rate-by-RR-bucket from Radar Learn (Postgres).
-  let winRate24h = null, winRateByRR = [], matchByType = {};
+  let winRate24h = null, winRate24hWins = null, winRate24hTotal = null, winRateByRR = [], matchByType = {}, setupMap = {};
   if (store.activeDriver() === 'postgres') {
     try {
       const rows = await store.learnSuccessRate({ mode });
       const h = rows.find((r) => r.horizon === '24h');
-      if (h && Number(h.n) > 0) winRate24h = Math.round(Number(h.win_rate) * 100);
+      if (h && Number(h.n) > 0) { winRate24h = Math.round(Number(h.win_rate) * 100); winRate24hTotal = Number(h.n); winRate24hWins = Math.round(Number(h.win_rate) * Number(h.n)); }
     } catch { /* leave null */ }
     try { winRateByRR = await store.learnRRBuckets({ mode }); } catch { winRateByRR = []; }
     try {
@@ -238,14 +238,18 @@ export async function getDashboard(mode = 'day') {
       const m = {}; for (const r of rows) if (Number(r.n) >= 3) m[r.setup_type] = Math.round(Number(r.win_rate) * 100);
       matchByType = m;
     } catch { /* leave empty */ }
+    try {
+      const active = await store.listSetups({ status: 'active', limit: 300 });
+      for (const a of active) setupMap[`${a.symbol}|${a.mode}`] = a.setup_id;
+    } catch { /* leave empty */ }
   }
 
   const temp = snap?.macro?.marketTemperature ?? 50;
   const marketRegime = temp >= 65 ? 'risk-on' : temp <= 40 ? 'risk-off' : 'neutral';
-  opportunities = opportunities.map((o) => ({ ...o, historicalMatch: matchByType[o.setupType] ?? null, marketRegime }));
+  opportunities = opportunities.map((o) => ({ ...o, historicalMatch: matchByType[o.setupType] ?? null, marketRegime, setupId: setupMap[`${o.symbol}|${mode}`] || null }));
 
   const macro = snap?.macro
-    ? { ...snap.macro, totalOpportunities: stats.totalOpportunities, avgConfidence: stats.avgConfidence, winRate24h, statsLive: true }
+    ? { ...snap.macro, totalOpportunities: stats.totalOpportunities, avgConfidence: stats.avgConfidence, winRate24h, winRate24hWins, winRate24hTotal, statsLive: true }
     : null;
 
   return {

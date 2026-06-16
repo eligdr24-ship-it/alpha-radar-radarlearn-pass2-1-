@@ -369,6 +369,12 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       }
       return buckets.map((b) => ({ bucket: b.label, win_rate: b.n ? +(b.wins / b.n).toFixed(3) : null, avg_return: b.n ? +(b.retSum / b.n).toFixed(4) : null, n: b.n }));
     },
+    async avgReturnForSetups(ids, horizon = '24h') {
+      if (!ids || !ids.length) return { avg: null, n: 0 };
+      const ph = ids.map((_, i) => `$${i + 2}`).join(',');
+      const r = await q(`SELECT avg(final_return) AS a, count(*) AS n FROM outcomes WHERE horizon = $1 AND setup_id IN (${ph})`, [horizon, ...ids]);
+      return { avg: r.rows[0].a == null ? null : Number(r.rows[0].a), n: Number(r.rows[0].n) };
+    },
     async getPerformance({ horizon } = {}) {
       const hf = horizon && horizon !== 'all';
       const P = hf ? [horizon] : [];
@@ -393,11 +399,37 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       const shortSetups = await grp(`SELECT s.setup_type AS k, ${agg} ${base} AND s.direction = 'SHORT' GROUP BY s.setup_type`);
       const narratives = await grp(`SELECT s.narrative AS k, ${agg} ${base} GROUP BY s.narrative`);
       const regimes = await grp(`SELECT s.market_regime AS k, ${agg} ${base} GROUP BY s.market_regime`);
-      const recent = async (cond) => (await run(`SELECT s.symbol, s.direction, s.mode, o.horizon, o.final_return, o.success_label, o.resolved_at ${base} AND o.success_label IN (${cond}) ORDER BY o.resolved_at DESC LIMIT 8`)).rows
-        .map((r) => ({ symbol: r.symbol, direction: r.direction, mode: r.mode, horizon: r.horizon, final_return: r.final_return == null ? null : Number(r.final_return), success_label: r.success_label, resolved_at: r.resolved_at }));
+      const recent = async (cond) => (await run(`SELECT s.setup_id, s.symbol, s.direction, s.mode, o.horizon, o.final_return, o.success_label, o.resolved_at ${base} AND o.success_label IN (${cond}) ORDER BY o.resolved_at DESC LIMIT 8`)).rows
+        .map((r) => ({ setup_id: r.setup_id, symbol: r.symbol, direction: r.direction, mode: r.mode, horizon: r.horizon, final_return: r.final_return == null ? null : Number(r.final_return), success_label: r.success_label, resolved_at: r.resolved_at }));
       const recentWins = await recent(`'target1','target2','stretch'`);
       const recentLosses = await recent(`'fail','invalidated'`);
-      return { horizon: horizon || 'all', overall, byMode, byHorizon, coins, longSetups, shortSetups, narratives, regimes, recentWins, recentLosses };
+
+      // Why setups lost — derive reason buckets from outcome flags.
+      const lr = (await run(`SELECT
+          count(*) AS total,
+          sum(CASE WHEN o.hit_invalidation THEN 1 ELSE 0 END) AS below_inval,
+          sum(CASE WHEN o.success_label = 'fail' AND NOT o.hit_invalidation AND NOT o.hit_target1 THEN 1 ELSE 0 END) AS failed_t1
+        ${base} AND o.success_label IN ('fail','invalidated')`)).rows[0] || {};
+      const total = Number(lr.total || 0), belowInval = Number(lr.below_inval || 0), failedT1 = Number(lr.failed_t1 || 0);
+      const lossReasons = { total, belowInvalidation: belowInval, failedTarget1: failedT1, other: Math.max(0, total - belowInval - failedT1) };
+
+      // A representative losing setup with full decision-time detail + what happened.
+      const ex = (await run(`SELECT s.symbol, s.direction, s.mode, s.entry_price, s.buy_zone_low, s.buy_zone_high,
+          s.target1, s.target2, s.stretch_target, s.invalidation, s.market_regime, s.narrative,
+          o.success_label, o.final_return, o.price_at_horizon, o.max_adverse_excursion, o.max_favorable_excursion, o.hit_invalidation, o.horizon, o.resolved_at
+        ${base} AND o.success_label IN ('fail','invalidated') ORDER BY o.resolved_at DESC LIMIT 1`)).rows[0] || null;
+      const exampleLoss = ex ? {
+        symbol: ex.symbol, direction: ex.direction, mode: ex.mode,
+        entryPrice: ex.entry_price, buyZoneLow: ex.buy_zone_low, buyZoneHigh: ex.buy_zone_high,
+        target1: ex.target1, target2: ex.target2, stretchTarget: ex.stretch_target, invalidation: ex.invalidation,
+        marketRegime: ex.market_regime, narrative: ex.narrative,
+        successLabel: ex.success_label, finalReturn: ex.final_return == null ? null : Number(ex.final_return),
+        priceAtHorizon: ex.price_at_horizon, maxAdverse: ex.max_adverse_excursion == null ? null : Number(ex.max_adverse_excursion),
+        maxFavorable: ex.max_favorable_excursion == null ? null : Number(ex.max_favorable_excursion),
+        hitInvalidation: ex.hit_invalidation, horizon: ex.horizon, resolvedAt: ex.resolved_at,
+      } : null;
+
+      return { horizon: horizon || 'all', overall, byMode, byHorizon, coins, longSetups, shortSetups, narratives, regimes, recentWins, recentLosses, lossReasons, exampleLoss };
     },
     async learnWinRateByType({ mode } = {}) {
       const r = await q(

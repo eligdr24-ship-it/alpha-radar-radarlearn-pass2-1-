@@ -312,3 +312,96 @@ img,svg,table{max-width:100%}
   .miniOp{grid-template-columns:24px 1fr auto 40px}
   .miniOp .miniStat:nth-child(3),.miniOp .miniStat:nth-child(4){display:none}
 }
+
+/* dashboard perf summary card */
+.perfSummary{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.perfSummary .psBig{font-size:34px;font-weight:800;line-height:1.1}
+.perfSummary .psSub{color:var(--muted);font-size:13px}
+.psBtn{margin-top:10px;display:inline-block;background:#16345a;border:1px solid #3a72c8;color:#dbe8ff;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;text-decoration:none}
+.psBtn:hover{background:#1c3f6e}
+
+/* recent win/loss rows */
+.lossRow{border-bottom:1px solid var(--line);padding:7px 0}
+.lrTop{display:flex;align-items:center;gap:8px}.lrTop b{font-size:14px}
+.lrMode{color:var(--muted);font-size:11px;text-transform:capitalize}
+.lrRet{margin-left:auto;font-size:14px}
+.lrSub{color:var(--muted);font-size:11px;margin-top:2px;text-transform:capitalize}
+
+/* example losing setup */
+.exLoss .exHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.exLoss .exHead b{font-size:16px}.exLoss .exHead small{color:var(--muted);font-size:11px}
+.exLevels{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.exLevels>div{background:#0b1320;border:1px solid var(--line);border-radius:9px;padding:8px}
+.exLevels small{display:block;color:var(--muted);font-size:10px;margin-bottom:3px}.exLevels b{font-size:13px}
+.exWhat,.exDiff{font-size:12.5px;color:#cdd6e6;margin:6px 0 0;line-height:1.5}
+.exWhat b,.exDiff b{color:#e8eefc}
+.lossGrid{grid-template-columns:1fr 1.3fr}
+
+/* timeframe cards (mobile) */
+.perfTfCards{display:none;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.tfCard{background:#0b1320;border:1px solid var(--line);border-radius:10px;padding:10px}
+.tfCard.sel{border-color:#3a72c8;background:#10203a}
+.tfTop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}.tfTop b{font-size:15px}
+.tfStats{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:var(--muted)}
+
+@media (max-width:760px){
+  .lossGrid{grid-template-columns:1fr}
+  .exLevels{grid-template-columns:repeat(2,1fr)}
+  .perfTableWrap{display:none}
+  .perfTfCards{display:grid}
+}
+
+/* ===== Trade Replay page ===== */
+.tradePage{max-width:1040px;margin:0 auto;padding:0 16px 90px}
+.copyBtn{margin-left:auto;background:#16345a;border:1px solid #3a72c8;color:#dbe8ff;border-radius:9px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer}
+.replayBtn{background:#23104a;border:1px solid #7d35ff;color:#d9c5ff;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:700;text-decoration:none}
+.tdHero{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;margin-bottom:12px}
+.tdTitle h2{margin:0;font-size:22px}.tdTitle h2 span{color:var(--muted);font-size:14px;font-weight:400}.tdTitle p{margin:2px 0 0;color:var(--muted);font-size:12px;text-transform:capitalize}
+.resultBadge{font-size:12px;font-weight:800;padding:5px 11px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px}
+.resultBadge.win{background:rgba(39,247,101,.16);color:var(--green)}.resultBadge.loss{background:rgba(255,59,59,.16);color:#ff7777}.resultBadge.open{background:#1a2740;color:#9fc2ff}.resultBadge.expired{background:#2a2233;color:#c9a6e0}
+.tdGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.tdCard{padding:14px}.tdCard h3{margin:0 0 10px;font-size:14px}
+.tdRow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.tdRow span{color:var(--muted)}.tdRow b{text-align:right;overflow-wrap:anywhere}
+.bigPred{font-size:18px;font-weight:800;margin:0 0 8px}
+.diffLine,.modelNote{margin-top:10px;font-size:12.5px;color:#cdd6e6;line-height:1.5}.diffLine b,.modelNote{color:#e8eefc}
+.pred{border-color:#2f5fa8}.real{border-color:#3a3a16}
+
+/* replay chart */
+.replayChart{width:100%;height:auto;display:block;background:#0a1018;border:1px solid var(--line);border-radius:12px}
+.replayChart .pricePath{fill:none;stroke:#26d6ff;stroke-width:2}
+.replayChart .lvlLine{stroke-width:1;stroke-dasharray:4 4}
+.replayChart .lvlLine.t{stroke:#27f765}.replayChart .lvlLine.e{stroke:#9fb0c8}.replayChart .lvlLine.x{stroke:#ff3b3b}
+.replayChart .lvlLabel{font-size:10px;fill:var(--muted)}.replayChart .lvlLabel.t{fill:#27f765}.replayChart .lvlLabel.x{fill:#ff7777}
+.replayChart .sigMarker{stroke:#ffd23f;stroke-width:1;stroke-dasharray:3 3}.replayChart .sigText{font-size:10px;fill:#ffd23f}
+.replayChart .outcomePt{fill:#fff;stroke:#26d6ff;stroke-width:2}
+.replayChart .zoneBand{fill:rgba(47,95,168,.18)}
+.chartEmpty{padding:30px;text-align:center;color:var(--muted);background:#0a1018;border:1px solid var(--line);border-radius:12px}
+.chartLegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted)}
+.chartLegend .lg::before{content:'';display:inline-block;width:10px;height:2px;margin-right:5px;vertical-align:middle}
+.lg.e::before{background:#9fb0c8}.lg.t::before{background:#27f765}.lg.x::before{background:#ff3b3b}.lg.sig::before{background:#ffd23f}.lg.path::before{background:#26d6ff}
+.lossRow.clk{cursor:pointer}.lossRow.clk:hover{background:rgba(255,255,255,.04)}
+
+@media (max-width:760px){ .tdGrid{grid-template-columns:1fr} .tradePage{padding:0 12px 90px} .tdTitle h2{font-size:19px} }
+
+/* ===== Dashboard density / fit (so it fits at 100% zoom) ===== */
+.side{width:214px;padding:18px 12px}
+.side a{padding:10px 12px;margin:5px 0;font-size:14px}
+.brand h1{font-size:19px}.brand p{font-size:11px}
+.radar{width:36px;height:36px;font-size:24px}
+.pro b{font-size:19px;margin:8px 0}
+header{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.stat{padding:12px 14px;min-height:auto}.stat strong{font-size:19px}
+.upgrade{margin:12px}
+.modeBar{padding:12px 14px;gap:8px}.modeBar button{min-width:128px;padding:9px 12px}
+.grid{grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px;padding:0 14px 18px}
+.grid>.card,.gaugeCard{padding:13px}
+.card h3,.sectionTitle h2{font-size:15px}
+.hero{margin:0 14px 12px;padding:14px}
+.controls{margin:0 14px 12px}.lsGrid{margin:0 14px 12px}.selHero{margin:0 14px 12px}.emergeView{margin:0 14px 12px}
+.gauge{height:116px}.gauge span{font-size:30px}.gaugeCard b{font-size:17px;margin-top:6px}
+.selMetrics b{font-size:16px}.selLevels .lvl b{font-size:14px}.selTitle h2{font-size:21px}
+table{min-width:0}.perfTable{min-width:620px}
+main{min-width:0;padding-bottom:60px}
+.app{overflow-x:hidden}
+@media (max-width:1280px) and (min-width:1051px){ header{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))} }

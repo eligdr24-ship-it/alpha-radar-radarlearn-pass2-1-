@@ -40,6 +40,7 @@ function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
         <button onClick={onNext} disabled={idx>=total-1}>Next ›</button>
       </div>
       <div className="selNavR">
+        {op.setupId&&<a className="replayBtn" href={`/trade/${op.setupId}`}>🎬 Trade Replay</a>}
         <button className={"pinBtn "+(pinned?'on':'')} onClick={onPin}>{pinned?'📌 Pinned':'📌 Pin Coin'}</button>
         <button className="closeBtn" onClick={onClose}>✕</button>
       </div>
@@ -181,7 +182,7 @@ function App(){
       <div className="pro">ALPHA RADAR PRO<br/><Clock/><button>View Reports</button></div></aside>
     <main>
       <Ticker ops={data.opportunities}/>
-      <header><div className="brand mobile"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1><p>Intelligence Terminal</p></div></div><Stat label="Market Temp" value={data.macro.marketTemperature+'/100'}/><Stat label="Opportunities" value={data.macro.totalOpportunities}/><Stat label="Avg Confidence" value={data.macro.avgConfidence+'%'}/><Stat label="24H Win Rate" value={data.macro.winRate24h!=null?data.macro.winRate24h+'%':'—'} sub={data.macro.winRate24h!=null?'Radar Learn':'accruing'}/><a className="upgrade" href="/status">System Status</a></header>
+      <header><div className="brand mobile"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1><p>Intelligence Terminal</p></div></div><Stat label="Market Temp" value={data.macro.marketTemperature+'/100'}/><Stat label="Opportunities" value={data.macro.totalOpportunities}/><Stat label="Avg Confidence" value={data.macro.avgConfidence+'%'}/><Stat label="24H Win Rate" value={data.macro.winRate24h!=null?data.macro.winRate24h+'%':'—'} sub={data.macro.winRate24hTotal?`${data.macro.winRate24hWins}/${data.macro.winRate24hTotal}`:(data.macro.winRate24h!=null?'Radar Learn':'accruing')}/><a className="upgrade" href="/status">System Status</a></header>
       <div className="modeBar">{modes.map(m=><button key={m.id} className={mode===m.id?'active':''} onClick={()=>setMode(m.id)}>{m.label}<small>{m.sub}</small></button>)}</div>
       {data.dataStatus&&!data.dataStatus.live&&<div className={"dataBanner "+(/mock/.test(data.dataStatus.source||'')?"mock":"stale")}><b>⚠ {data.dataStatus.label}</b><span>{data.dataStatus.note}</span></div>}
       {data.rrFilter&&data.rrFilter.relaxed&&<div className="dataBanner stale"><b>⚠ RR filter relaxed ({data.rrFilter.minRR}R min)</b><span>{data.rrFilter.note}</span></div>}
@@ -199,7 +200,7 @@ function App(){
             <LongShortLists items={items} onSelect={pick} selSym={selected&&selected.symbol}/>
             {items.length===0&&<p className="noResults">No coins match the current filters. Try a wider universe, lower RR, or clear search.</p>}
           </>}
-      <div className="grid"><Gauge value={data.macro.marketTemperature} label="Bullish"/><div className="card"><h3>Score Breakdown</h3><div className="bars">{selected && Object.entries(selected.signals||{}).slice(0,6).map(([k,v])=><label key={k}><span>{k}</span><i><b style={{width:v+'%'}}/></i><em>{v}</em></label>)}</div></div><div className="card"><h3>Emerging Coin Radar</h3>{(data.emerging||[]).slice(0,3).map(e=><div className="macro" key={e.chain+e.symbol}><span>{e.symbol}<small> {e.chain}</small></span><b>{e.earlyScore}</b><em className={e.rugRisk>70?'red':'green'}>Risk {e.rugRisk}</em></div>)}{(!data.emerging||data.emerging.length===0)&&<p>DEX sources ready. Waiting for live data.</p>}</div><Gauge value={data.macro.fearGreed} label="Greed"/><div className="card"><h3>Macro Radar <small className={"srcBadge "+(data.macro.macroLive?"live":"mock")}>{data.macro.macroLive?"LIVE: Stooq":"FALLBACK: Mock"}</small></h3>{data.macro.assets.map(a=><div className="macro" key={a.label}><span>{a.label}{a.live===false&&<small className="srcBadge mock">mock</small>}</span><b>{a.value}</b><em className={a.change>0?'green':'red'}>{a.change>0?'+':''}{a.change}%</em></div>)}</div><div className="card"><h3>Narrative Radar</h3>{data.narratives.map(n=><div className="macro" key={n.narrative}><span>{n.narrative}</span><b>{n.strength}</b><em className={n.momentum>0?'green':'red'}>{n.momentum>0?'+':''}{n.momentum}</em></div>)}</div><Analytics a={data.analytics}/><div className="card"><h3>Recent Alerts</h3>{data.alerts.map(a=><div className="alert" key={a.title}><b>{a.title}</b><p>{a.text}</p><small>{a.age}</small></div>)}</div></div>
+      <div className="grid"><Gauge value={data.macro.marketTemperature} label="Bullish"/><div className="card"><h3>Score Breakdown</h3><div className="bars">{selected && Object.entries(selected.signals||{}).slice(0,6).map(([k,v])=><label key={k}><span>{k}</span><i><b style={{width:v+'%'}}/></i><em>{v}</em></label>)}</div></div><div className="card"><h3>Emerging Coin Radar</h3>{(data.emerging||[]).slice(0,3).map(e=><div className="macro" key={e.chain+e.symbol}><span>{e.symbol}<small> {e.chain}</small></span><b>{e.earlyScore}</b><em className={e.rugRisk>70?'red':'green'}>Risk {e.rugRisk}</em></div>)}{(!data.emerging||data.emerging.length===0)&&<p>DEX sources ready. Waiting for live data.</p>}</div><Gauge value={data.macro.fearGreed} label="Greed"/><div className="card"><h3>Macro Radar <small className={"srcBadge "+(data.macro.macroLive?"live":"mock")}>{data.macro.macroLive?"LIVE: Stooq":"FALLBACK: Mock"}</small></h3>{data.macro.assets.map(a=><div className="macro" key={a.label}><span>{a.label}{a.live===false&&<small className="srcBadge mock">mock</small>}</span><b>{a.value}</b><em className={a.change>0?'green':'red'}>{a.change>0?'+':''}{a.change}%</em></div>)}</div><div className="card"><h3>Narrative Radar</h3>{data.narratives.map(n=><div className="macro" key={n.narrative}><span>{n.narrative}</span><b>{n.strength}</b><em className={n.momentum>0?'green':'red'}>{n.momentum>0?'+':''}{n.momentum}</em></div>)}</div><PerfSummaryCard macro={data.macro}/><div className="card"><h3>Recent Alerts</h3>{data.alerts.map(a=><div className="alert" key={a.title}><b>{a.title}</b><p>{a.text}</p><small>{a.age}</small></div>)}</div></div>
     </main>
     <nav className="bottom"><a className="active" href="/">⌂<small>Home</small></a><a href="/mobile">📱<small>Mobile</small></a><a href="/status">⚙<small>Status</small></a><a href="/performance">📈<small>Perf</small></a></nav>
   </div>;
@@ -308,6 +309,27 @@ function PerfList({title,rows,dir='desc'}){
   const sorted=[...(rows||[])].filter(r=>r.n>0).sort((a,b)=>dir==='asc'?(a.win_rate||0)-(b.win_rate||0):(b.win_rate||0)-(a.win_rate||0));
   return <div className="card perfCard"><h3>{title}</h3>{sorted.length?<div className="perfRows">{sorted.slice(0,6).map(r=><div className="perfRow" key={r.k}><span className="pk">{r.k||'—'}</span><b className={(r.win_rate||0)>=0.5?'green':'red'}>{pctOf(r.win_rate)}</b><em>{r.avg_return!=null?retOf(r.avg_return)+' · ':''}{r.n}</em></div>)}</div>:<p className="muted2">No data yet.</p>}</div>;
 }
+function fmtP(x){ if(x==null) return '—'; const n=Number(x); if(!isFinite(n)) return '—'; if(n>=1000) return '$'+n.toLocaleString(undefined,{maximumFractionDigits:2}); if(n>=1) return '$'+n.toFixed(2); if(n>=0.01) return '$'+n.toFixed(4); return '$'+n.toPrecision(3); }
+const pctRdr=(n,t)=>t?Math.round(n/t*100)+'%':'—';
+function ExampleLoss({ex}){
+  if(!ex) return <div className="card perfCard"><h3>📉 Example Losing Setup</h3><p className="muted2">No losing setup to show in this timeframe yet.</p></div>;
+  const isLong=ex.direction==='LONG';
+  const predT1=ex.entryPrice?((isLong?(ex.target1-ex.entryPrice):(ex.entryPrice-ex.target1))/ex.entryPrice*100):null;
+  const happened=ex.hitInvalidation?'Price reached the stop / invalidation level and the trade was cut for a loss.':'Price never reached Target 1 before the horizon elapsed, so the setup failed.';
+  return <div className="card perfCard exLoss"><h3>📉 Example Losing Setup</h3>
+    <div className="exHead"><b>{ex.symbol}</b><span className={isLong?'green':'red'}>{ex.direction}</span><small>{ex.mode} · {ex.horizon} · {ex.narrative||'—'} · {ex.marketRegime||'—'}</small></div>
+    <div className="exLevels">
+      <div><small>Price at signal</small><b>{fmtP(ex.entryPrice)}</b></div>
+      <div><small>Buy / Sell zone</small><b>{fmtP(ex.buyZoneLow)}–{fmtP(ex.buyZoneHigh)}</b></div>
+      <div><small>Target 1</small><b>{fmtP(ex.target1)}</b></div>
+      <div><small>Target 2</small><b>{fmtP(ex.target2)}</b></div>
+      <div><small>Stop / Invalidation</small><b className="red">{fmtP(ex.invalidation)}</b></div>
+      <div><small>Price at {ex.horizon}</small><b>{fmtP(ex.priceAtHorizon)}</b></div>
+    </div>
+    <p className="exWhat"><b>What actually happened:</b> {happened}</p>
+    <p className="exDiff"><b>Prediction vs result:</b> predicted {predT1!=null?(predT1>=0?'+':'')+predT1.toFixed(1)+'% to Target 1':'—'}, actual {ex.finalReturn!=null?((ex.finalReturn*100>=0?'+':'')+(ex.finalReturn*100).toFixed(1)+'%'):'—'}{ex.maxAdverse!=null?` · worst drawdown ${(ex.maxAdverse*100).toFixed(1)}%`:''}.</p>
+  </div>;
+}
 function PerfBody({p}){
   const o=p.overall;
   const best=[...(p.byHorizon||[])].filter(h=>h.n>=1).sort((a,b)=>(b.win_rate||0)-(a.win_rate||0))[0];
@@ -324,10 +346,24 @@ function PerfBody({p}){
       <PerfStat label="Invalidation" value={pctOf(o.inv)} tone="red"/>
       <PerfStat label="Resolved Setups" value={o.n}/>
     </div>
-    <div className="card"><h3>Timeframe Performance</h3><div className="tableWrap"><table className="perfTable"><thead><tr><th>Timeframe</th><th>Win Rate</th><th>Avg Return</th><th>Avg RR</th><th>T1</th><th>T2</th><th>Stretch</th><th>Inval</th><th>Resolved</th></tr></thead><tbody>{ranking.map(h=><tr key={h.k} className={best&&h.k===best.k?'sel':''}><td><b>{h.k.toUpperCase()}</b></td><td className={(h.win_rate||0)>=0.5?'green':'red'}>{pctOf(h.win_rate)}</td><td>{retOf(h.avg_return)}</td><td>{rrOf(h.avg_rr)}</td><td>{pctOf(h.t1)}</td><td>{pctOf(h.t2)}</td><td>{pctOf(h.st)}</td><td>{pctOf(h.inv)}</td><td>{h.n}</td></tr>)}</tbody></table></div></div>
+    <div className="card"><h3>Timeframe Performance</h3>
+      <div className="tableWrap perfTableWrap"><table className="perfTable"><thead><tr><th>Timeframe</th><th>Win Rate</th><th>Wins / Total</th><th>Avg Return</th><th>Avg RR</th><th>T1</th><th>T2</th><th>Stretch</th><th>Inval</th></tr></thead><tbody>{ranking.map(h=><tr key={h.k} className={best&&h.k===best.k?'sel':''}><td><b>{h.k.toUpperCase()}</b></td><td className={(h.win_rate||0)>=0.5?'green':'red'}>{pctOf(h.win_rate)}</td><td>{Math.round((h.win_rate||0)*h.n)}/{h.n}</td><td>{retOf(h.avg_return)}</td><td>{rrOf(h.avg_rr)}</td><td>{pctOf(h.t1)}</td><td>{pctOf(h.t2)}</td><td>{pctOf(h.st)}</td><td>{pctOf(h.inv)}</td></tr>)}</tbody></table></div>
+      <div className="perfTfCards">{ranking.map(h=><div className={"tfCard"+(best&&h.k===best.k?' sel':'')} key={h.k}><div className="tfTop"><b>{h.k.toUpperCase()}</b><b className={(h.win_rate||0)>=0.5?'green':'red'}>{pctOf(h.win_rate)}</b></div><div className="tfStats"><span>{Math.round((h.win_rate||0)*h.n)}/{h.n} wins</span><span>Ret {retOf(h.avg_return)}</span><span>RR {rrOf(h.avg_rr)}</span><span>T1 {pctOf(h.t1)}</span><span>Inval {pctOf(h.inv)}</span></div></div>)}</div>
+    </div>
+    <div className="perfGrid lossGrid">
+      <div className="card perfCard"><h3>❓ Why Setups Lost</h3>
+        {p.lossReasons&&p.lossReasons.total>0?<div className="perfRows">
+          <div className="perfRow"><span className="pk">Price dropped below invalidation</span><b className="red">{p.lossReasons.belowInvalidation}</b><em>{pctRdr(p.lossReasons.belowInvalidation,p.lossReasons.total)}</em></div>
+          <div className="perfRow"><span className="pk">Failed to reach Target 1</span><b className="red">{p.lossReasons.failedTarget1}</b><em>{pctRdr(p.lossReasons.failedTarget1,p.lossReasons.total)}</em></div>
+          <div className="perfRow"><span className="pk">Other (regime shift, low volume/liquidity, timeout)</span><b>{p.lossReasons.other}</b><em>{pctRdr(p.lossReasons.other,p.lossReasons.total)}</em></div>
+        </div>:<p className="muted2">No losing setups in this timeframe yet.</p>}
+        <small className="tierNote">Derived from resolved Radar Learn outcomes (invalidation hits and Target-1 misses). Regime/volume attribution is grouped under "Other".</small>
+      </div>
+      <ExampleLoss ex={p.exampleLoss}/>
+    </div>
     <div className="perfGrid">
-      <div className="card perfCard"><h3>🟢 Recent Wins</h3>{p.recentWins.length?p.recentWins.map((w,i)=><div className="perfRow" key={i}><span className="pk">{w.symbol} <em className={w.direction==='LONG'?'green':'red'}>{w.direction}</em></span><b className="green">{retOf(w.final_return)}</b><em>{w.horizon} · {w.success_label}</em></div>):<p className="muted2">None yet.</p>}</div>
-      <div className="card perfCard"><h3>🔴 Recent Losses</h3>{p.recentLosses.length?p.recentLosses.map((w,i)=><div className="perfRow" key={i}><span className="pk">{w.symbol} <em className={w.direction==='LONG'?'green':'red'}>{w.direction}</em></span><b className="red">{retOf(w.final_return)}</b><em>{w.horizon} · {w.success_label}</em></div>):<p className="muted2">None yet.</p>}</div>
+      <div className="card perfCard"><h3>🟢 Recent Wins</h3>{p.recentWins.length?p.recentWins.map((w,i)=><div className={"lossRow"+(w.setup_id?" clk":"")} key={i} onClick={()=>w.setup_id&&(window.location.href=`/trade/${w.setup_id}`)}><div className="lrTop"><b>{w.symbol}</b><span className={w.direction==='LONG'?'green':'red'}>{w.direction}</span><span className="lrMode">{w.mode}</span><b className="green lrRet">{retOf(w.final_return)}</b></div><div className="lrSub">{w.success_label} · {w.horizon} · {fmt(w.resolved_at)}</div></div>):<p className="muted2">No wins yet.</p>}</div>
+      <div className="card perfCard"><h3>🔴 Recent Losses</h3>{p.recentLosses.length?p.recentLosses.map((w,i)=><div className={"lossRow"+(w.setup_id?" clk":"")} key={i} onClick={()=>w.setup_id&&(window.location.href=`/trade/${w.setup_id}`)}><div className="lrTop"><b>{w.symbol}</b><span className={w.direction==='LONG'?'green':'red'}>{w.direction}</span><span className="lrMode">{w.mode}</span><b className="red lrRet">{retOf(w.final_return)}</b></div><div className="lrSub">{w.success_label==="invalidated"?"invalidated":"failed"} · {w.horizon} · {fmt(w.resolved_at)}</div></div>):<p className="muted2">No losses yet.</p>}</div>
     </div>
     <div className="perfGrid">
       <PerfList title="Best Performing Coins" rows={p.coins}/>
@@ -338,6 +374,14 @@ function PerfBody({p}){
       <PerfList title="Best Market Regimes" rows={p.regimes}/>
     </div>
   </>;
+}
+function PerfSummaryCard({macro}){
+  const wr=macro.winRate24h, wins=macro.winRate24hWins, total=macro.winRate24hTotal;
+  return <div className="card perfSummary"><h3>📈 System Performance</h3>
+    <div className="psBig">{wr!=null?wr+'%':'—'}</div>
+    <div className="psSub">24H Win Rate{total?` — ${wins}/${total} setups`:' · accruing'}</div>
+    <a className="psBtn" href="/performance">View System Performance →</a>
+  </div>;
 }
 function SystemPerformance(){
   const [horizon,setHorizon]=useState('all');
@@ -354,6 +398,134 @@ function SystemPerformance(){
   </div>;
 }
 
+/* ===== Trade Replay / Trade Detail ===== */
+function durStr(ms){ if(ms==null||ms<0) return null; const m=Math.round(ms/60000); if(m<60) return m+'m'; const h=Math.floor(m/60); return `${h}h ${m%60}m`; }
+function tstamp(t){ if(!t) return 'Not reached'; const d=new Date(t); return d.toLocaleString(); }
+function ReplayChart({path,s}){
+  if(!path||path.length<2) return <div className="chartEmpty">Chart history not available yet. Radar Learn is still collecting data.</div>;
+  const W=720,H=300,PADX=56,PADT=18,PADB=24;
+  const prices=path.map(p=>p.price);
+  const levels=[s.entry_price,s.target1,s.target2,s.stretch_target,s.invalidation,s.buy_zone_low,s.buy_zone_high].filter(x=>x!=null);
+  const lo=Math.min(...prices,...levels), hi=Math.max(...prices,...levels);
+  const pad=(hi-lo)*0.08||Math.abs(hi*0.02)||1, ymin=lo-pad, ymax=hi+pad;
+  const X=i=>PADX+(i/(path.length-1))*(W-PADX-14);
+  const Y=v=>PADT+(1-(v-ymin)/(ymax-ymin))*(H-PADT-PADB);
+  const pts=path.map((p,i)=>`${X(i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
+  const line=(v,cls,label)=>v==null?null:<g key={label}><line x1={PADX} x2={W-14} y1={Y(v)} y2={Y(v)} className={"lvlLine "+cls}/><text x={PADX-6} y={Y(v)+3} className={"lvlLabel "+cls} textAnchor="end">{label}</text></g>;
+  const created=+new Date(s.created_at); let sig=path.findIndex(p=>+new Date(p.at)>=created); if(sig<0) sig=0;
+  const zoneTop=s.buy_zone_low!=null?Math.max(s.buy_zone_low,s.buy_zone_high):null;
+  return <svg viewBox={`0 0 ${W} ${H}`} className="replayChart" preserveAspectRatio="xMidYMid meet">
+    {zoneTop!=null&&<rect x={PADX} y={Y(zoneTop)} width={W-PADX-14} height={Math.max(2,Math.abs(Y(s.buy_zone_low)-Y(s.buy_zone_high)))} className="zoneBand"/>}
+    {line(s.target1,'t','T1')}{line(s.target2,'t','T2')}{line(s.stretch_target,'t','Stretch')}
+    {line(s.entry_price,'e','Entry')}{line(s.invalidation,'x','Stop')}
+    <polyline points={pts} className="pricePath"/>
+    <line x1={X(sig)} x2={X(sig)} y1={PADT} y2={H-PADB} className="sigMarker"/>
+    <text x={X(sig)+4} y={PADT+11} className="sigText">signal</text>
+    <circle cx={X(path.length-1)} cy={Y(path[path.length-1].price)} r="4.5" className="outcomePt"/>
+  </svg>;
+}
+function TradeDetail({setupId}){
+  const [d,setD]=useState(null); const [copied,setCopied]=useState(false);
+  useEffect(()=>{ let on=true; fetch(`/api/trade/${encodeURIComponent(setupId)}`).then(r=>r.json()).then(x=>{if(on)setD(x)}).catch(()=>{if(on)setD({available:false,error:'Failed to load trade.'})}); return()=>{on=false}; },[setupId]);
+  if(!d) return <div className="loading">Loading trade…</div>;
+  const back=<a className="back" href="/performance">‹ Back</a>;
+  if(!d.available) return <div className="tradePage"><header className="statusHead">{back}<h1>🎬 Trade Replay</h1></header><div className="card emptyPerf"><p className="muted2">{d.note||d.error||'Trade replay not available.'}</p></div></div>;
+  const s=d.setup, isLong=s.direction==='LONG', tl=d.timeline||{};
+  const ocs=d.outcomes||[]; const oc=ocs.find(o=>o.horizon==='24h')||ocs[ocs.length-1]||null;
+  const result = s.status==='active'?'Open':s.status==='expired'?'Expired':(['target1','target2','stretch'].includes(s.final_label)?'Win':'Loss');
+  const created=+new Date(s.created_at);
+  const t1pct = s.entry_price?((isLong?(s.target1-s.entry_price):(s.entry_price-s.target1))/s.entry_price*100):null;
+  const finalRet = oc?.final_return!=null?Number(oc.final_return)*100:null;
+  const mfe = oc?.max_favorable_excursion!=null?Number(oc.max_favorable_excursion)*100:null;
+  const mae = oc?.max_adverse_excursion!=null?Number(oc.max_adverse_excursion)*100:null;
+  const t1after = tl.target1At?durStr(+new Date(tl.target1At)-created):null;
+  // why won/lost reasons
+  const reasons=[];
+  if(result==='Win'){ if(s.final_label==='stretch') reasons.push('Reached the stretch target'); else if(s.final_label==='target2') reasons.push('Reached Target 2'); else reasons.push('Reached Target 1'); if(mae!=null&&mae>0) reasons.push(`Held the stop (worst drawdown ${mae.toFixed(1)}%)`); }
+  else if(result==='Loss'){ if(oc?.hit_invalidation) reasons.push('Hit invalidation / stop'); if(!oc?.hit_target1) reasons.push('Failed to reach Target 1'); if(mfe!=null&&mfe>1&&oc?.hit_invalidation) reasons.push('Price reversed after an early favorable move'); reasons.push('Possible regime change / volume fade (not separately tracked)'); }
+  else if(result==='Expired'){ reasons.push('Price never entered the buy/sell zone before expiry'); }
+  const copy=()=>{
+    const L=[`ALPHA RADAR — TRADE REPLAY`,`${s.symbol} ${s.direction} (${s.mode})  [${result}]`,`Setup: ${s.setup_type||'—'} · Regime: ${s.market_regime||'—'} · Narrative: ${s.narrative||'—'}`,
+      `Signal: ${tstamp(s.created_at)}`,`Entry ${fmtP(s.entry_price)} · Zone ${fmtP(s.buy_zone_low)}-${fmtP(s.buy_zone_high)}`,
+      `T1 ${fmtP(s.target1)} · T2 ${fmtP(s.target2)} · Stretch ${fmtP(s.stretch_target)} · Stop ${fmtP(s.invalidation)}`,
+      `Conviction ${s.conviction_score??'—'} · Confidence ${s.confidence_score??'—'}`,
+      `Actual: ${finalRet!=null?(finalRet>=0?'+':'')+finalRet.toFixed(1)+'% at '+(oc?.horizon||'—'):'open'}${t1after?` · T1 after ${t1after}`:''}${mfe!=null?` · MFE +${mfe.toFixed(1)}%`:''}${mae!=null?` · MAE -${Math.abs(mae).toFixed(1)}%`:''}`,
+      d.learning?.n?`Similar setups: ${d.learning.n} · win ${d.learning.winRate}% · avg ${d.learning.avgReturn!=null?(d.learning.avgReturn*100).toFixed(1)+'%':'—'}`:''].filter(Boolean).join('\n');
+    navigator.clipboard?.writeText(L).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),1800);}).catch(()=>{});
+  };
+  const Row=({label,value,tone})=> <div className="tdRow"><span>{label}</span><b className={tone||''}>{value}</b></div>;
+  return <div className="tradePage">
+    <header className="statusHead">{back}<h1>🎬 Trade Replay</h1><button className="copyBtn" onClick={copy}>{copied?'✓ Copied':'⧉ Copy Replay Summary'}</button></header>
+    <div className="tdHero card"><div className="coinAvatar big">{s.symbol[0]}</div><div className="tdTitle"><h2>{s.symbol} <span>/ USDT</span></h2><p>{s.setup_type||'setup'} · {s.mode}</p></div><Pill tone={isLong?'long':'short'}>{s.direction}</Pill><span className={"resultBadge "+result.toLowerCase()}>{result}</span></div>
+
+    <div className="tdGrid">
+      <div className="card tdCard"><h3>1 · Trade Summary</h3>
+        <Row label="Direction" value={s.direction} tone={isLong?'green':'red'}/>
+        <Row label="Mode" value={s.mode}/><Row label="Setup type" value={s.setup_type||'—'}/>
+        <Row label="Signal created" value={tstamp(s.created_at)}/>
+        <Row label="Entry price at signal" value={fmtP(s.entry_price)}/>
+        <Row label="Buy / Sell zone" value={`${fmtP(s.buy_zone_low)} – ${fmtP(s.buy_zone_high)}`}/>
+        <Row label="Target 1" value={fmtP(s.target1)} tone="green"/><Row label="Target 2" value={fmtP(s.target2)} tone="green"/>
+        <Row label="Stretch target" value={fmtP(s.stretch_target)} tone="green"/>
+        <Row label="Stop / invalidation" value={fmtP(s.invalidation)} tone="red"/>
+        <Row label="Conviction" value={s.conviction_score??'—'}/><Row label="Confidence" value={s.confidence_score!=null?s.confidence_score+'%':'—'}/>
+        <Row label="Market regime" value={s.market_regime||'—'}/><Row label="Narrative" value={s.narrative||'—'}/>
+        <Row label="Final result" value={result} tone={result==='Win'?'green':result==='Loss'?'red':''}/>
+      </div>
+      <div className="card tdCard"><h3>2 · Timeline</h3>
+        <Row label="System suggested trade" value={tstamp(tl.signalAt)}/>
+        <Row label="Entered buy/sell zone" value={tstamp(tl.entryAt)}/>
+        <Row label="Target 1 hit" value={tstamp(tl.target1At)}/>
+        <Row label="Target 2 hit" value={tstamp(tl.target2At)}/>
+        <Row label="Stretch hit" value={tstamp(tl.stretchAt)}/>
+        <Row label="Invalidation hit" value={tstamp(tl.invalidationAt)} tone={tl.invalidationAt?'red':''}/>
+        <Row label="Outcome resolved" value={tstamp(tl.resolvedAt)}/>
+      </div>
+    </div>
+
+    <div className="card"><h3>3 · Price Chart</h3><ReplayChart path={d.path} s={s}/>
+      <div className="chartLegend"><span className="lg e">Entry</span><span className="lg t">Targets</span><span className="lg x">Stop</span><span className="lg sig">Signal</span><span className="lg path">Price path</span></div>
+    </div>
+
+    <div className="tdGrid">
+      <div className="card tdCard pred"><h3>4 · Predicted</h3>
+        <p className="bigPred">{s.direction} {s.symbol}</p>
+        <Row label="Buy/Sell zone" value={`${fmtP(s.buy_zone_low)} – ${fmtP(s.buy_zone_high)}`}/>
+        <Row label="Target 1" value={fmtP(s.target1)}/><Row label="Target 2" value={fmtP(s.target2)}/>
+        <Row label="Stop" value={fmtP(s.invalidation)}/>
+        <Row label="Expected move to T1" value={t1pct!=null?(t1pct>=0?'+':'')+t1pct.toFixed(1)+'%':'—'} tone="green"/>
+      </div>
+      <div className="card tdCard real"><h3>Reality</h3>
+        {d.path&&d.path.length?<>
+          <Row label="Entered zone at" value={tl.entryAt?fmtP((d.path.find(p=>p.at===tl.entryAt)||{}).price)||'yes':'Not reached'}/>
+          <Row label="Target 1" value={tl.target1At?`Reached after ${t1after}`:'Not reached'} tone={tl.target1At?'green':'red'}/>
+          <Row label="Max favorable move" value={mfe!=null?'+'+mfe.toFixed(1)+'%':'—'} tone="green"/>
+          <Row label="Max adverse move" value={mae!=null?'-'+Math.abs(mae).toFixed(1)+'%':'—'} tone="red"/>
+          <Row label={`Final return (${oc?.horizon||'—'})`} value={finalRet!=null?(finalRet>=0?'+':'')+finalRet.toFixed(1)+'%':'Open'} tone={finalRet!=null?(finalRet>=0?'green':'red'):''}/>
+          {t1pct!=null&&finalRet!=null&&<div className="diffLine"><b>Difference:</b> expected {(t1pct>=0?'+':'')+t1pct.toFixed(0)}%, actual {(finalRet>=0?'+':'')+finalRet.toFixed(0)}%</div>}
+        </>:<p className="muted2">{s.status==='active'?'Trade still open. Outcome not resolved yet.':'Chart history not available yet. Radar Learn is still collecting data.'}</p>}
+      </div>
+    </div>
+
+    <div className="tdGrid">
+      <div className="card tdCard"><h3>5 · Why It {result==='Win'?'Won':result==='Loss'?'Lost':'Is '+result}</h3>
+        {reasons.length?<ul className="whyList">{reasons.map((r,i)=><li key={i}>{r}</li>)}</ul>:<p className="muted2">Trade still open — outcome not resolved yet.</p>}
+      </div>
+      <div className="card tdCard"><h3>6 · System Learning</h3>
+        {d.learning&&d.learning.n?<>
+          <Row label="Similar setups" value={d.learning.n}/>
+          <Row label="Win rate" value={d.learning.winRate!=null?d.learning.winRate+'%':'—'} tone={(d.learning.winRate||0)>=50?'green':'red'}/>
+          <Row label="Average return" value={d.learning.avgReturn!=null?((d.learning.avgReturn*100>=0?'+':'')+(d.learning.avgReturn*100).toFixed(1)+'%'):'—'}/>
+          <Row label="This result" value={result} tone={result==='Win'?'green':result==='Loss'?'red':''}/>
+          <p className="modelNote">{result==='Win'?'Reinforces confidence for this pattern slightly.':result==='Loss'?'Lowers confidence for this pattern slightly.':'No confidence change until resolved.'}</p>
+        </>:<p className="muted2">Not enough similar resolved setups yet to compare.</p>}
+      </div>
+    </div>
+    <nav className="bottom"><a href="/">⌂<small>Home</small></a><a href="/performance">📈<small>Performance</small></a><a href="/status">⚙<small>Status</small></a><a href="/mobile">📱<small>Mobile</small></a></nav>
+  </div>;
+}
+
 const path=window.location.pathname;
-const View = path.startsWith('/mobile') ? Mobile : path.startsWith('/status') ? StatusPage : path.startsWith('/performance') ? SystemPerformance : App;
+const tradeMatch=path.match(/^\/trade\/(.+)$/);
+const View = tradeMatch ? (() => <TradeDetail setupId={decodeURIComponent(tradeMatch[1])}/>) : path.startsWith('/mobile') ? Mobile : path.startsWith('/status') ? StatusPage : path.startsWith('/performance') ? SystemPerformance : App;
 createRoot(document.getElementById('root')).render(<View/>);
