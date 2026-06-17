@@ -85,6 +85,7 @@ export const classifyAndStoreFailure = proxy('classifyAndStoreFailure');
 export const getFailureReason = proxy('getFailureReason');
 export const backfillFailures = proxy('backfillFailures');
 export const getFailureBreakdown = proxy('getFailureBreakdown');
+export const purgeNonRobinhood = proxy('purgeNonRobinhood');
 export const getPatterns = proxy('getPatterns');
 export const getPatternDetail = proxy('getPatternDetail');
 export const matchSetup = proxy('matchSetup');

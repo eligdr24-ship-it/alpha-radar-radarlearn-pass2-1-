@@ -496,6 +496,32 @@ export async function createPgStore({ connectionString, pool: injected, ssl } = 
       const total = r.rows.reduce((s, x) => s + Number(x.n), 0);
       return { total, reasons: r.rows.map((x) => ({ reason: x.primary_reason, count: Number(x.n), share: total ? Number(x.n) / total : 0 })) };
     },
+    // Remove ALL stored data for coins NOT in the Robinhood allowlist (keeps MACRO:* macro
+    // history). One-time cleanup so historical analytics only ever show Robinhood coins.
+    async purgeNonRobinhood(symbols) {
+      const up = (symbols || []).map((s) => String(s).toUpperCase());
+      if (!up.length) return { removedSetups: 0, removedSnapshots: 0, removedAssets: 0 };
+      const ph = up.map((_, i) => `$${i + 1}`).join(',');
+      const ids = (await q(`SELECT setup_id FROM setups WHERE upper(symbol) NOT IN (${ph})`, up)).rows.map((r) => r.setup_id);
+      if (ids.length) {
+        const idph = ids.map((_, i) => `$${i + 1}`).join(',');
+        for (const t of ['outcomes', 'signal_values', 'setup_vectors', 'pattern_members', 'failure_reasons']) {
+          await q(`DELETE FROM ${t} WHERE setup_id IN (${idph})`, ids);
+        }
+        await q(`DELETE FROM setups WHERE setup_id IN (${idph})`, ids);
+      }
+      const snapN = Number((await q(`SELECT count(*) AS n FROM snapshot_coins WHERE upper(symbol) NOT IN (${ph})`, up)).rows[0].n);
+      await q(`DELETE FROM snapshot_coins WHERE upper(symbol) NOT IN (${ph})`, up);
+      let removedAssets = 0;
+      try {
+        removedAssets = Number((await q(`SELECT count(DISTINCT asset) AS n FROM asset_history WHERE upper(asset) NOT IN (${ph}) AND asset NOT LIKE 'MACRO:%'`, up)).rows[0].n);
+        for (const t of ['asset_history', 'asset_sources', 'asset_profile']) {
+          await q(`DELETE FROM ${t} WHERE upper(asset) NOT IN (${ph}) AND asset NOT LIKE 'MACRO:%'`, up);
+        }
+      } catch { /* deep-history tables optional */ }
+      await this.recomputePatterns();   // refresh stats; emptied patterns drop to sample_size 0 (hidden)
+      return { removedSetups: ids.length, removedSnapshots: snapN, removedAssets };
+    },
 
     // One-time/idempotent: assign patterns for setups that predate the Pattern Library
     // (membership is only auto-created for setups made after deploy). Safe to re-run.

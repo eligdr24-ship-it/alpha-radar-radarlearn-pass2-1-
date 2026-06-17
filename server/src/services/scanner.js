@@ -7,7 +7,7 @@ import { getScoringInput } from '../engines/historyProvider.js';
 import { buildSeries, historyTier, tierRank } from '../engines/history.js';
 import { getDexScreenerTrending, getGeckoTerminalTrending, getMacroAssets } from './externalApis.js';
 import { evaluatePromotions, classifySetupType } from './radarLearn.js';
-import { categoryOf, CATEGORIES, UNIVERSE_LABEL, ROBINHOOD_ONLY } from '../config/robinhoodUniverse.js';
+import { categoryOf, CATEGORIES, UNIVERSE_LABEL, ROBINHOOD_ONLY, isRobinhood } from '../config/robinhoodUniverse.js';
 import * as store from '../db/store.js';
 
 const MODES = ['scalp', 'day', 'swing'];
@@ -260,7 +260,7 @@ export async function getDashboard(mode = 'day') {
   return {
     ready: Boolean(opp), mode, opportunities,
     dataSource: snap?.source || 'none', updatedAt: opp?.at || null,
-    macro, narratives, emerging: snap?.emerging || [],
+    macro, narratives, emerging: (snap?.emerging || []).filter((e) => !ROBINHOOD_ONLY || isRobinhood(e.symbol)),
     marketRegime,
     universeLabel: UNIVERSE_LABEL, robinhoodOnly: ROBINHOOD_ONLY, categories,
     analytics: { rr: rrAnalytics, winRateByRR },
