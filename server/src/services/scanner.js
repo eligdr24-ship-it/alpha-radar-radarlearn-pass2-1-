@@ -7,6 +7,7 @@ import { getScoringInput } from '../engines/historyProvider.js';
 import { buildSeries, historyTier, tierRank } from '../engines/history.js';
 import { getDexScreenerTrending, getGeckoTerminalTrending, getMacroAssets } from './externalApis.js';
 import { evaluatePromotions, classifySetupType } from './radarLearn.js';
+import { categoryOf, CATEGORIES, UNIVERSE_LABEL, ROBINHOOD_ONLY } from '../config/robinhoodUniverse.js';
 import * as store from '../db/store.js';
 
 const MODES = ['scalp', 'day', 'swing'];
@@ -246,7 +247,11 @@ export async function getDashboard(mode = 'day') {
 
   const temp = snap?.macro?.marketTemperature ?? 50;
   const marketRegime = temp >= 65 ? 'risk-on' : temp <= 40 ? 'risk-off' : 'neutral';
-  opportunities = opportunities.map((o) => ({ ...o, historicalMatch: matchByType[o.setupType] ?? null, marketRegime, setupId: setupMap[`${o.symbol}|${mode}`] || null }));
+  opportunities = opportunities.map((o) => ({ ...o, category: categoryOf(o.symbol), historicalMatch: matchByType[o.setupType] ?? null, marketRegime, setupId: setupMap[`${o.symbol}|${mode}`] || null }));
+
+  const categoryCounts = {};
+  for (const o of opportunities) { const c = o.category || 'Other'; categoryCounts[c] = (categoryCounts[c] || 0) + 1; }
+  const categories = CATEGORIES.filter((c) => categoryCounts[c]).map((c) => ({ category: c, count: categoryCounts[c] }));
 
   const macro = snap?.macro
     ? { ...snap.macro, totalOpportunities: stats.totalOpportunities, avgConfidence: stats.avgConfidence, winRate24h, winRate24hWins, winRate24hTotal, statsLive: true }
@@ -257,8 +262,9 @@ export async function getDashboard(mode = 'day') {
     dataSource: snap?.source || 'none', updatedAt: opp?.at || null,
     macro, narratives, emerging: snap?.emerging || [],
     marketRegime,
+    universeLabel: UNIVERSE_LABEL, robinhoodOnly: ROBINHOOD_ONLY, categories,
     analytics: { rr: rrAnalytics, winRateByRR },
-    universe: universe ? { size: universe.coins.length, source: universe.source, filter: universe.filter } : null,
+    universe: universe ? { size: universe.coins.length, source: universe.source, filter: universe.filter, label: universe.label } : null,
     lastRun,
   };
 }

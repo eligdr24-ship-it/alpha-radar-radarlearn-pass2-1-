@@ -66,6 +66,7 @@ router.get('/dashboard', async (req, res) => {
     emerging: dash.emerging, universe: dash.universe, rrFilter, analytics: dash.analytics, marketRegime: dash.marketRegime,
     updatedAt: dash.updatedAt || new Date().toISOString(),
     macro: dash.macro, narratives: dash.narratives || narratives, opportunities, lastRun: dash.lastRun,
+    universeLabel: dash.universeLabel, robinhoodOnly: dash.robinhoodOnly, categories: dash.categories,
     alerts: [
       { type: 'Scan', title: `Data: ${dataStatus.label}`, text: dataStatus.note || `${dash.universe?.size ?? 0} coins, rescored across scalp/day/swing.`, age: ageSeconds != null ? `${ageSeconds}s ago` : 'now' },
       top ? { type: 'Opportunity', title: `Top ${top.direction}: ${top.symbol}${top.elite ? ' 🚀 ELITE' : ''}`, text: `Alpha ${top.alphaScore} | RR ${top.display.rr} | Conviction ${top.conviction}/100`, age: 'now' } : null,

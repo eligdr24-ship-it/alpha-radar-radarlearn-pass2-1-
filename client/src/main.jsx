@@ -143,6 +143,7 @@ function SelectedHero({op, idx, total, onPrev, onNext, pinned, onPin, onClose}){
             <p className="curPrice">Current Price: <b>{op.display.price}</b> <span className={"srcState "+ss.cls}>{ss.label}{op.dataSource?': '+op.dataSource.replace(/^(LIVE|STALE|FALLBACK):/,''):''}</span></p>
           </div>
           <Pill tone={op.direction==='LONG'?'long':'short'}>{op.direction}</Pill>
+          {op.category&&<span className="catChip">{op.category}</span>}
           {op.elite&&<span className="eliteBadge">🚀 ELITE</span>}
         </div>
         <div className="selMetrics">
@@ -251,6 +252,7 @@ function App(){
   const [rrMin,setRrMin]=useState(0);
   const [universe,setUniverse]=useState('top100');
   const [query,setQuery]=useState('');
+  const [cat,setCat]=useState('all');
   const [selSym,setSelSym]=useState(null);
   const [pinned,setPinned]=useState(false);
   const data=useDashboard(mode);
@@ -259,12 +261,13 @@ function App(){
   const items=useMemo(()=>{
     let arr=data?.opportunities||[];
     if(universe!=='all'&&universe!=='emerging'&&uniRank[universe]) arr=arr.filter(x=>(x.marketCapRank||9999)<=uniRank[universe]);
+    if(cat!=='all') arr=arr.filter(x=>x.category===cat);
     if(filter==='long') arr=arr.filter(x=>x.direction==='LONG');
     if(filter==='short') arr=arr.filter(x=>x.direction==='SHORT');
     if(rrMin) arr=arr.filter(x=>(x.trade?.rr||0)>=rrMin);
     if(query.trim()){const q=query.trim().toLowerCase(); arr=arr.filter(x=>(x.symbol+' '+x.name+' '+(x.narrative||x.sector||'')).toLowerCase().includes(q));}
     return arr;
-  },[data,filter,rrMin,universe,query]);
+  },[data,filter,rrMin,universe,query,cat]);
   const all=data?.opportunities||[];
   const selected = all.find(o=>o.symbol===selSym) || all[0] || null;
   const idx = items.findIndex(o=>o.symbol===(selected&&selected.symbol));
@@ -282,6 +285,8 @@ function App(){
       <Ticker ops={data.opportunities}/>
       <header><div className="brand mobile"><div className="radar">◎</div><div><h1>ALPHA RADAR</h1><p>Intelligence Terminal</p></div></div><Stat label="Market Temp" value={data.macro.marketTemperature+'/100'}/><Stat label="Opportunities" value={data.macro.totalOpportunities}/><Stat label="Avg Confidence" value={data.macro.avgConfidence+'%'}/><Stat label="24H Win Rate" value={data.macro.winRate24h!=null?data.macro.winRate24h+'%':'—'} sub={data.macro.winRate24hTotal?`${data.macro.winRate24hWins}/${data.macro.winRate24hTotal}`:(data.macro.winRate24h!=null?'Radar Learn':'accruing')}/><a className="upgrade" href="/status">System Status</a></header>
       <div className="modeBar">{modes.map(m=><button key={m.id} className={mode===m.id?'active':''} onClick={()=>setMode(m.id)}>{m.label}<small>{m.sub}</small></button>)}</div>
+      {data.universeLabel&&<div className="rhUniverse"><span className="rhBadge">🏦 {data.universeLabel}</span>{data.robinhoodOnly&&<small>Tracking {(data.opportunities||[]).length} Robinhood-listed coins only</small>}</div>}
+      {data.categories&&data.categories.length>0&&<div className="catBar"><button className={cat==='all'?'active':''} onClick={()=>setCat('all')}>All</button>{data.categories.map(c=><button key={c.category} className={cat===c.category?'active':''} onClick={()=>setCat(c.category)}>{c.category}<small>{c.count}</small></button>)}</div>}
       {data.dataStatus&&!data.dataStatus.live&&<div className={"dataBanner "+(/mock/.test(data.dataStatus.source||'')?"mock":"stale")}><b>⚠ {data.dataStatus.label}</b><span>{data.dataStatus.note}</span></div>}
       {data.rrFilter&&data.rrFilter.relaxed&&<div className="dataBanner stale"><b>⚠ RR filter relaxed ({data.rrFilter.minRR}R min)</b><span>{data.rrFilter.note}</span></div>}
       <div id="selHeroTop"/>

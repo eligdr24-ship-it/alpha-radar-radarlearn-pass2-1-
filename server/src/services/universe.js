@@ -4,6 +4,7 @@
 import { fetchJson } from '../lib/http.js';
 import { createLimiter } from '../lib/limiter.js';
 import { coins as mockCoins } from '../data/coins.js';
+import { applyRobinhoodUniverse, ROBINHOOD_ONLY, UNIVERSE_LABEL } from '../config/robinhoodUniverse.js';
 
 const cgLimiter = createLimiter({ minGapMs: 1500, maxConcurrent: 1 }); // CoinGecko free tier is strict
 const bnLimiter = createLimiter({ minGapMs: 500, maxConcurrent: 2 });
@@ -125,11 +126,11 @@ export async function buildUniverse() {
           return { ...c, name: g.name || c.name, marketCapUsd, type: classify(c.symbol, marketCapUsd, c.change24h), sector: g.sector || c.sector };
         });
       }
-      return { source: 'binance-live', coins: rankCoins(coins), errors };
+      return { source: 'binance-live', coins: rankCoins(applyRobinhoodUniverse(coins)), errors, filter: ROBINHOOD_ONLY ? 'robinhood' : 'full', label: UNIVERSE_LABEL };
     }
   } catch (err) { errors.push(`binance: ${err.message}`); }
 
   // Fallback: CoinGecko snapshot (possibly cached) if Binance is unavailable.
-  if (cg) return { source: 'coingecko-live', coins: rankCoins(cg), errors };
-  return { source: 'mock-fallback', coins: rankCoins(fromMock()), errors };
+  if (cg) return { source: 'coingecko-live', coins: rankCoins(applyRobinhoodUniverse(cg)), errors, filter: ROBINHOOD_ONLY ? 'robinhood' : 'full', label: UNIVERSE_LABEL };
+  return { source: 'mock-fallback', coins: rankCoins(applyRobinhoodUniverse(fromMock())), errors, filter: ROBINHOOD_ONLY ? 'robinhood' : 'full', label: UNIVERSE_LABEL };
 }
